@@ -1,0 +1,1290 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#9e1b1b"><link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icon-192.png"><link rel="apple-touch-icon" href="icon-192.png"><meta name="mobile-web-app-capable" content="yes"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style></head><body><title>Bellas Pork City POS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+
+<style>
+/* Layout: a counter tool. Sticky status bar (day, stock left, who is serving), one task per tab, bottom tab bar on phones. */
+:root{
+  --bg:#f7f3f1; --panel:#ffffff; --ink:#22292d; --muted:#5d666b; --line:#e3dbd7; --soft:#efe7e3;
+  --red:#9e1b1b; --red-ink:#ffffff; --char:#36454f; --char-ink:#ffffff;
+  --ok:#1f6b45; --ok-bg:#e3f2e9; --warn:#8a5300; --warn-bg:#fdf0d8; --bad:#a1161a; --bad-bg:#fbe3e2;
+  --f-display:"Zilla Slab", Rockwell, "Roboto Slab", Georgia, serif;
+  --f-body:"Source Sans 3", "Segoe UI", Roboto, Arial, sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#171a1c; --panel:#20262a; --ink:#ece8e6; --muted:#a3a9ad; --line:#353d42; --soft:#2a3136;
+  --red:#d5544c; --red-ink:#1a0f0e; --char:#9fb2bf; --char-ink:#13181b;
+  --ok:#7fd3a3; --ok-bg:#1d3328; --warn:#f2c06b; --warn-bg:#3a2e17; --bad:#ff8f87; --bad-bg:#40201f; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#171a1c; --panel:#20262a; --ink:#ece8e6; --muted:#a3a9ad; --line:#353d42; --soft:#2a3136;
+  --red:#d5544c; --red-ink:#1a0f0e; --char:#9fb2bf; --char-ink:#13181b;
+  --ok:#7fd3a3; --ok-bg:#1d3328; --warn:#f2c06b; --warn-bg:#3a2e17; --bad:#ff8f87; --bad-bg:#40201f; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.45 var(--f-body);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 96px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+h1,h2,h3{font-family:var(--f-display);font-weight:700;line-height:1.15;text-wrap:balance;margin:0}
+h2{font-size:1.35rem} h3{font-size:1.05rem}
+.wrap{max-width:980px;margin:0 auto;display:grid;gap:14px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:10px 8px;display:grid;gap:8px;border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:space-between}
+.word{font-family:var(--f-display);font-size:1.25rem;color:var(--red);letter-spacing:.01em}
+.word small{display:block;font:600 .72rem/1.2 var(--f-body);color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.stat{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--soft);font-size:.85rem;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)} .chip.warn{background:var(--warn-bg);color:var(--warn)} .chip.bad{background:var(--bad-bg);color:var(--bad)}
+.banner{padding:10px 12px;border-radius:var(--r);font-weight:600;font-size:.95rem}
+.banner.warn{background:var(--warn-bg);color:var(--warn)} .banner.bad{background:var(--bad-bg);color:var(--bad)} .banner.ok{background:var(--ok-bg);color:var(--ok)} .banner.info{background:var(--soft);color:var(--ink)}
+.tabs{display:flex;gap:4px;overflow-x:auto}
+.tabs button{flex:1 0 auto}
+@media (max-width:700px){.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--panel);border-top:1px solid var(--line);padding:6px max(8px,env(safe-area-inset-left,0px)) calc(6px + env(safe-area-inset-bottom,0px)) max(8px,env(safe-area-inset-right,0px))}}
+@media (max-width:700px){.tab{padding:10px 8px!important;font-size:.85rem!important}}
+.tab{appearance:none;border:0;background:transparent;color:var(--muted);font:700 .9rem var(--f-body);padding:10px 12px;border-radius:8px;cursor:pointer}
+.tab[aria-selected="true"]{background:var(--char);color:var(--char-ink)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:12px;min-width:0}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+.row>*{min-width:0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+label{display:grid;gap:4px;font-size:.85rem;font-weight:600;color:var(--muted)}
+label.check{display:flex;gap:10px;align-items:flex-start;font-size:1rem;color:var(--ink);font-weight:600}
+label.check input{width:22px;height:22px;margin-top:1px;flex:none;accent-color:var(--red)}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:44px;width:100%}
+input[type=number]{font-variant-numeric:tabular-nums}
+textarea{min-height:64px}
+:focus-visible{outline:3px solid color-mix(in srgb,var(--red) 55%,transparent);outline-offset:2px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:700 1rem var(--f-body);padding:11px 16px;border-radius:8px;min-height:46px;cursor:pointer}
+.btn.primary{background:var(--red);border-color:var(--red);color:var(--red-ink)}
+.btn.dark{background:var(--char);border-color:var(--char);color:var(--char-ink)}
+.btn.small{min-height:34px;padding:6px 10px;font-size:.85rem}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.wide{width:100%}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.tile{appearance:none;text-align:left;border:1px solid var(--line);background:var(--panel);border-radius:var(--r);padding:12px;min-height:86px;cursor:pointer;display:grid;align-content:space-between;gap:6px;color:var(--ink);font:inherit}
+.tile b{font:700 1.05rem var(--f-display)}
+.tile span{font-size:.85rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.tile.hero{grid-column:span 2;background:var(--red);border-color:var(--red);color:var(--red-ink);min-height:110px}
+.tile.hero span{color:inherit;opacity:.85} .tile.hero b{font-size:1.4rem}
+.tile.off{opacity:.55}
+.tile.side{min-height:64px}
+.section-label{font:700 .75rem var(--f-body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;font-size:.92rem}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.75rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+td.n,th.n{text-align:right}
+.scroll{overflow-x:auto}
+.line{display:flex;justify-content:space-between;gap:10px;align-items:baseline;font-variant-numeric:tabular-nums}
+.line .x{appearance:none;border:0;background:none;color:var(--bad);font-weight:700;cursor:pointer;padding:4px 8px}
+.total{font:700 1.5rem var(--f-display);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)} .small{font-size:.85rem}
+.receipt{font:13px/1.35 var(--f-mono);white-space:pre;background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:12px;overflow-x:auto;max-width:100%}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{appearance:none;border:0;background:var(--panel);color:var(--ink);font:700 .9rem var(--f-body);padding:10px 14px;cursor:pointer;min-height:44px}
+.seg button[aria-pressed="true"]{background:var(--char);color:var(--char-ink)}
+.sheet{position:fixed;inset:0;z-index:20;background:color-mix(in srgb,#000 45%,transparent);display:grid;align-items:end;justify-items:center;padding:12px max(12px,env(safe-area-inset-left,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-right,0px))}
+@media (min-width:701px){.sheet{align-items:center}}
+.sheet .panel{width:min(520px,100%);max-height:88vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.pinpad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pinpad button{min-height:56px;font-size:1.3rem}
+.dots{font:700 1.6rem var(--f-mono);letter-spacing:.4em;text-align:center;min-height:2rem}
+.kv{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-variant-numeric:tabular-nums}
+.kv dt{color:var(--muted)} .kv dd{margin:0;text-align:right;font-weight:600}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:.78rem;font-weight:700;background:var(--soft)}
+.pill.ok{background:var(--ok-bg);color:var(--ok)} .pill.warn{background:var(--warn-bg);color:var(--warn)} .pill.bad{background:var(--bad-bg);color:var(--bad)}
+.err{color:var(--bad);font-weight:600}
+.note{border-left:3px solid var(--char);padding:4px 0 4px 10px;font-size:.92rem}
+.bio{border-left-color:var(--red)}
+@media (prefers-reduced-motion:no-preference){.tile:active,.btn:active{transform:scale(.98)}}
+#print-area{display:none}
+@media print{body{padding:0;background:#fff}body>*:not(#print-area){display:none!important}#print-area{display:block;font:11px/1.25 "IBM Plex Mono",monospace;color:#000;margin:0;white-space:pre}#print-area.w32{width:58mm}#print-area.w48{width:80mm}@page{margin:2mm}}
+</style>
+
+<div class="wrap">
+  <header class="top" id="top">
+    <div class="brand">
+      <div class="word">Bellas Pork City<small>Counter · Kithino</small></div>
+      <div class="stat" id="stat"><span class="chip">Connecting…</span></div>
+    </div>
+    <div id="banners"></div>
+    <nav class="tabs" id="tabs" role="tablist" hidden></nav>
+  </header>
+  <main id="view" class="wrap"><div class="panel"><h2>Opening the counter</h2><p class="muted">Loading today's sales, stock and staff list. If this takes more than a few seconds, check the phone's internet.</p></div></main>
+</div>
+<div id="sheet"></div>
+<pre id="print-area" aria-hidden="true"></pre>
+
+<script>
+/* Fonts load in the background so a slow connection never holds up the counter screen. */
+(function () { try { var l = document.createElement("link"); l.rel = "stylesheet"; l.href = "https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@600;700&family=Source+Sans+3:wght@400;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap"; document.head.appendChild(l); } catch (e) { } })();
+/* Bellas Pork City POS — pure logic (no DOM, no network). Tested in node by test.js.
+   Every figure here comes from Christabel's confirmed price list (19 Oct 2026) or her daily reports. */
+(function (root) {
+  "use strict";
+
+  // ---------- catalogue (defaults; the Owner can change prices in Settings, each change is logged)
+  var ITEMS = {
+    porkugali: { key: "porkugali", name: "Pork ugali", short: "Pork ugali", kind: "kg", price: 150, per: "100 g", perKg: 1500,
+      pork: true, line: "Kitchen", offer: true, note: "Per 100 g of pork, weighed raw. Ugali portion included." },
+    fresh:   { key: "fresh", name: "Fresh pork", short: "Fresh pork", kind: "kg", price: 700, per: "kg", perKg: 700, pork: true, line: "Butchery" },
+    premium: { key: "premium", name: "Premium cuts", short: "Premium cuts", kind: "kg", price: 800, per: "kg", perKg: 800, pork: true, line: "Butchery",
+      note: "Ribs, lean chops, skinless cuts" },
+    cooked:  { key: "cooked", name: "Cooked pork", short: "Cooked pork", kind: "kg", price: 700, per: "kg (raw)", perKg: 700, pork: true, line: "Kitchen",
+      note: "Weigh raw, before cooking" },
+    platter: { key: "platter", name: "Pork platter", short: "Platter", kind: "each", price: 1200, per: "platter", porkKgEach: 1, pork: true, line: "Kitchen",
+      note: "1 kg of pork, weighed raw" },
+    mukimo:  { key: "mukimo", name: "Mukimo", kind: "side", line: "Side" },
+    chips:   { key: "chips", name: "Chips", kind: "side", line: "Side" },
+    ugali:   { key: "ugali", name: "Ugali", kind: "side", line: "Side" },
+    veg:     { key: "veg", name: "Vegetables", kind: "side", line: "Side" }
+  };
+  var SIDES = ["mukimo", "chips", "ugali", "veg"];
+  var PORTIONS = ["100g", "300g", "500g", "1kg"];
+  var PORTION_LABEL = { "100g": "100 g", "300g": "300 g", "500g": "500 g", "1kg": "1 kg" };
+  // KES per portion (Christabel, 19 Oct 2026)
+  var SIDE_PRICES = {
+    mukimo: { "100g": 20, "300g": 50, "500g": 100, "1kg": 100 },
+    chips:  { "100g": 20, "300g": 50, "500g": 100, "1kg": 100 },
+    ugali:  { "100g": 20, "300g": 50, "500g": 50,  "1kg": 100 },
+    veg:    { "100g": 20, "300g": 50, "500g": 50,  "1kg": 100 }
+  };
+
+  var DEFAULT_SETTINGS = {
+    prices: { porkugali: 150, fresh: 700, premium: 800, cooked: 700, platter: 1200 },
+    sidePrices: SIDE_PRICES,
+    rounding: "nearest1",          // not decided yet (Christabel, 19 Oct 2026): exact to the shilling, computed amount kept too
+    cashGapLimit: 50,              // suggested, not confirmed
+    stockGapLimit: 0.2,            // suggested, not confirmed
+    openingDiffLimit: 0.2,
+    sidesWithoutPork: false,       // Christabel, 19 Oct 2026: sides only with pork
+    standalonePrices: null,        // not decided
+    disposal: ["Pit", "Burn", "Bin collection"], // which one the shop uses is not confirmed
+    suppliers: ["John Nabea", "Faith Mpara", "Peter Kajogo", "Gitonga"],
+    salary: { chef: 500, farmhand: 200 },
+    floatKes: null                 // not confirmed
+  };
+
+  var EXPENSE_CATS = [
+    { key: "Unga", centre: "Pork City" }, { key: "Sukuma", centre: "Pork City" }, { key: "Cooking oil", centre: "Pork City" },
+    { key: "Tomatoes", centre: "Pork City" }, { key: "Lunch", centre: "Pork City" }, { key: "Transport", centre: "Pork City" },
+    { key: "Soap", centre: "Pork City" }, { key: "Salt", centre: "Pork City" }, { key: "Savete", centre: "Pork City" },
+    { key: "Vet (meat inspection)", centre: "Pork City" },
+    { key: "Feeds transport", centre: "Farm (paid by Pork City)" }, { key: "Pig feed", centre: "Farm (paid by Pork City)" },
+    { key: "Peas for pigs", centre: "Farm (paid by Pork City)" }, { key: "Other", centre: null }
+  ];
+  var FARM = "Farm (paid by Pork City)";
+
+  // ---------- numbers
+  function r3(x) { return Math.round((+x || 0) * 1000) / 1000; }
+  function r2(x) { return Math.round((+x || 0) * 100) / 100; }
+  function kes(x) { var n = Math.round(+x || 0); return (n < 0 ? "-" : "") + Math.abs(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+  function kg3(x) { return (+x || 0).toFixed(3); }
+  function kgShort(x) { return String(r3(x)); }
+  function applyRounding(amount, rule) {
+    if (rule === "down10") return Math.floor(amount / 10 + 1e-9) * 10;
+    if (rule === "nearest10") return Math.round(amount / 10) * 10;
+    return Math.round(amount);
+  }
+  function perKg(itemKey, settings) {
+    var p = (settings && settings.prices) || DEFAULT_SETTINGS.prices;
+    if (itemKey === "porkugali") return p.porkugali * 10;
+    return p[itemKey];
+  }
+
+  // ---------- lines
+  function lineFromKg(itemKey, kg, settings) {
+    kg = r3(kg);
+    if (!(kg > 0)) throw new Error("Enter the weight in kg");
+    var it = ITEMS[itemKey], pk = perKg(itemKey, settings);
+    var computed = r2(kg * pk);
+    return { item: itemKey, name: it.name, kg: kg, qty: null, unitPrice: itemKey === "porkugali" ? settings.prices.porkugali : pk,
+      unit: it.per, computed: computed, charged: applyRounding(computed, settings.rounding), stockKg: kg, pork: true, entry: "kg" };
+  }
+  function lineFromKes(itemKey, amount, settings) {
+    amount = Math.round(+amount);
+    if (!(amount > 0)) throw new Error("Enter the amount in KES");
+    var it = ITEMS[itemKey], pk = perKg(itemKey, settings);
+    var kg = r3(amount / pk);
+    return { item: itemKey, name: it.name, kg: kg, qty: null, unitPrice: itemKey === "porkugali" ? settings.prices.porkugali : pk,
+      unit: it.per, computed: amount, charged: amount, stockKg: kg, pork: true, entry: "kes" };
+  }
+  function platterLine(qty, settings) {
+    qty = Math.round(+qty || 1);
+    var p = settings.prices.platter;
+    return { item: "platter", name: "Pork platter", kg: null, qty: qty, unitPrice: p, unit: "platter",
+      computed: qty * p, charged: qty * p, stockKg: r3(qty * ITEMS.platter.porkKgEach), pork: true, entry: "qty" };
+  }
+  // Basis for side portions: pork kg of cooked, fresh and premium lines; if none, pork ugali kg
+  // (ugali side then not allowed: pork ugali already includes its ugali).
+  function sideBasis(lines) {
+    var k = 0, u = 0;
+    lines.forEach(function (l) {
+      if (l.item === "cooked" || l.item === "fresh" || l.item === "premium") k += l.stockKg;
+      if (l.item === "porkugali") u += l.stockKg;
+    });
+    k = r3(k); u = r3(u);
+    if (k > 0) return { kg: k, from: "pork", ugaliAllowed: true };
+    if (u > 0) return { kg: u, from: "porkugali", ugaliAllowed: false };
+    return { kg: 0, from: null, ugaliAllowed: true };
+  }
+  // Under 300 g -> 100 g; 300-499 g -> 300 g; 500-999 g -> 500 g; exactly 1 kg -> 1 kg.
+  // Above 1 kg: staff choose (Christabel, 19 Oct 2026), so no suggestion.
+  function suggestPortion(kg) {
+    kg = r3(kg);
+    if (!(kg > 0)) return null;
+    if (kg < 0.3) return "100g";
+    if (kg < 0.5) return "300g";
+    if (kg < 1) return "500g";
+    if (kg === 1) return "1kg";
+    return null;
+  }
+  function sideLine(side, portion, settings, suggested) {
+    var price = settings.sidePrices[side][portion];
+    return { item: side, name: ITEMS[side].name, kg: null, qty: 1, portion: portion, unitPrice: price, unit: PORTION_LABEL[portion] + " portion",
+      computed: price, charged: price, stockKg: 0, pork: false, entry: "portion",
+      suggested: suggested || null, changed: suggested ? suggested !== portion : false };
+  }
+  function canAddSide(side, lines, settings) {
+    var b = sideBasis(lines);
+    if (b.kg === 0 && !settings.sidesWithoutPork) return { ok: false, why: "Sides are sold only with pork. Add the pork first." };
+    if (side === "ugali" && !b.ugaliAllowed) return { ok: false, why: "Pork ugali already includes ugali. Do not add a separate ugali side." };
+    return { ok: true, basis: b };
+  }
+
+  function cartTotals(lines) {
+    var t = { porkKg: 0, porkKes: 0, foodKes: 0, total: 0, computed: 0, roundingDiff: 0 };
+    lines.forEach(function (l) {
+      t.total += l.charged; t.computed += l.computed;
+      if (l.pork) { t.porkKg += l.stockKg; t.porkKes += l.charged; } else t.foodKes += l.charged;
+    });
+    t.porkKg = r3(t.porkKg); t.computed = r2(t.computed); t.roundingDiff = r2(t.total - t.computed);
+    return t;
+  }
+
+  // ---------- payments
+  function normCode(c) { return String(c || "").trim().toUpperCase().replace(/\s+/g, ""); }
+  function validCode(c) { return /^[A-Z0-9]{10}$/.test(normCode(c)); }
+  function checkPayments(payments, total, usedCodes) {
+    var errs = [], sum = 0, seen = {}, change = 0;
+    if (!payments.length) errs.push("Choose how the customer paid.");
+    payments.forEach(function (p) {
+      var amt = Math.round(+p.amount || 0);
+      if (!(amt > 0)) errs.push(p.type + ": enter the amount.");
+      if (p.type === "Till" || p.type === "M-Pesa") {
+        var c = normCode(p.code);
+        if (!validCode(c)) errs.push(p.type + ": the transaction code must be 10 letters and digits (e.g. UJFEUAQL0V).");
+        else if (seen[c] || (usedCodes && usedCodes[c])) errs.push("Code " + c + " has already been used. Check the customer's message.");
+        seen[c] = 1;
+      }
+      sum += amt;
+    });
+    var cash = payments.filter(function (p) { return p.type === "Cash"; });
+    var nonCash = sum - cash.reduce(function (a, p) { return a + Math.round(+p.amount || 0); }, 0);
+    if (nonCash > total) errs.push("Till / M-Pesa amounts are more than the total.");
+    if (sum < total) errs.push("KES " + kes(total - sum) + " still to pay.");
+    if (sum > total) {
+      if (cash.length) change = sum - total; else errs.push("Payments are more than the total.");
+    }
+    return { ok: errs.length === 0, errors: errs, paid: sum, change: change };
+  }
+  // The amount each payment type actually keeps (cash net of change)
+  function paymentsNet(sale) {
+    var o = { Till: 0, "M-Pesa": 0, Cash: 0 };
+    (sale.payments || []).forEach(function (p) { o[p.type] = (o[p.type] || 0) + Math.round(+p.amount || 0); });
+    o.Cash -= (sale.change || 0);
+    return o;
+  }
+
+  // ---------- day
+  function live(list) { return (list || []).filter(function (x) { return !x.void; }); }
+  function stockMeatIn(m) { return m.inOpening ? 0 : r3(m.kg); }
+  function meatKg(m) { return r3(m.kg); }
+
+  function dayTotals(day, sales, expenses, meatin, waste) {
+    var S = live(sales), E = live(expenses), M = live(meatin), W = live(waste);
+    var t = { saleCount: S.length, soldKg: 0, porkKes: 0, foodKes: 0, takings: 0, computed: 0, till: 0, mpesa: 0, cashSales: 0,
+      expensesKes: 0, cashExpenses: 0, farmCostsKes: 0, salary: 0, salaryChef: 0, salaryFarm: 0,
+      meatInStock: 0, farmKg: 0, boughtKg: 0, boughtKes: 0, wasteKg: 0, ugaliKg: 0, ugaliKes: 0, byItem: {} };
+    S.forEach(function (s) {
+      (s.lines || []).forEach(function (l) {
+        t.computed += l.computed;
+        if (l.pork) { t.soldKg += l.stockKg; t.porkKes += l.charged; } else t.foodKes += l.charged;
+        if (l.item === "porkugali") { t.ugaliKg += l.stockKg; t.ugaliKes += l.charged; }
+        var b = t.byItem[l.name] || (t.byItem[l.name] = { kg: 0, qty: 0, kes: 0 });
+        b.kg = r3(b.kg + (l.kg || (l.item === "platter" ? l.stockKg : 0))); b.qty += l.qty || 0; b.kes += l.charged;
+      });
+      var n = paymentsNet(s);
+      t.till += n.Till; t.mpesa += n["M-Pesa"]; t.cashSales += n.Cash;
+    });
+    E.forEach(function (e) {
+      t.expensesKes += e.amount;
+      if (e.paidFrom !== "Owner") t.cashExpenses += e.amount;
+      if (e.centre === FARM) t.farmCostsKes += e.amount;
+      if (e.category === "Salary") { t.salary += e.amount; if (e.role === "chef") t.salaryChef += e.amount; if (e.role === "farmhand") t.salaryFarm += e.amount; }
+    });
+    M.forEach(function (m) {
+      t.meatInStock += stockMeatIn(m);
+      if (m.source === "farm") t.farmKg += meatKg(m); else { t.boughtKg += meatKg(m); t.boughtKes += Math.round(m.price || 0); }
+    });
+    W.forEach(function (w) { t.wasteKg += w.kg; });
+    ["soldKg", "meatInStock", "farmKg", "boughtKg", "wasteKg", "ugaliKg"].forEach(function (k) { t[k] = r3(t[k]); });
+    t.takings = t.porkKes + t.foodKes;
+    t.roundingDiff = r2(t.takings - t.computed);
+    t.net = t.takings - t.expensesKes;                       // expected money = pork KES + food KES - expenses
+    t.expectedCash = t.cashSales - t.cashExpenses;          // cash that should be in the drawer, after the float
+    var opening = day && day.openingKg != null ? +day.openingKg : null;
+    t.stockLeft = opening == null ? null : r3(opening + t.meatInStock - t.soldKg - t.wasteKg);
+    if (day && day.closingKg != null && opening != null) t.stockGap = r3(+day.closingKg - t.stockLeft); else t.stockGap = null;
+    if (day && day.cashCounted != null) {
+      t.cashNet = Math.round(+day.cashCounted) - Math.round(+(day.floatKes || 0));
+      t.recorded = t.till + t.mpesa + t.cashNet;
+      t.cashGap = t.recorded - t.net;
+    } else { t.cashNet = null; t.recorded = null; t.cashGap = null; }
+    t.salaryOk = t.salaryChef === 500 && t.salaryFarm === 200 && t.salary === 700;
+    return t;
+  }
+
+  function closeChecks(day, t, settings) {
+    var need = [];
+    if (t.cashGap != null && Math.abs(t.cashGap) > settings.cashGapLimit) need.push({ key: "cash", text: "Money is " + (t.cashGap < 0 ? "short" : "over") + " by KES " + kes(Math.abs(t.cashGap)) + ". Say why." });
+    if (t.stockGap != null && Math.abs(t.stockGap) > settings.stockGapLimit + 1e-9) need.push({ key: "stock", text: "Stock is " + (t.stockGap < 0 ? "short" : "over") + " by " + kg3(Math.abs(t.stockGap)) + " kg. Say why." });
+    if (!t.salaryOk) need.push({ key: "salary", text: "Salary is KES " + kes(t.salary) + " today, not 700 (500 chef + 200 farm hand). Say why." });
+    var flags = [];
+    if (t.cashGap) flags.push((t.cashGap < 0 ? "KES " + kes(-t.cashGap) + " short" : "KES " + kes(t.cashGap) + " over"));
+    if (t.stockGap) flags.push((t.stockGap > 0 ? "+" : "") + kg3(t.stockGap) + " kg stock gap");
+    return { needReason: need, flags: flags };
+  }
+
+  // ---------- WhatsApp daily report, in the format of claude/pork-city-daily-report.md
+  function prettyDate(iso) {
+    var d = new Date(iso + "T12:00:00Z");
+    var m = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][d.getUTCMonth()];
+    return d.getUTCDate() + " " + m + " " + d.getUTCFullYear();
+  }
+  function reportText(day, t, expenses, meatin) {
+    var E = live(expenses), M = live(meatin);
+    var by = {};
+    E.forEach(function (e) {
+      var k = e.category === "Salary" ? "Salary" : e.category === "Other" ? "Other: " + (e.note || "") : e.category;
+      by[k] = (by[k] || 0) + e.amount;
+    });
+    var main = ["Salary", "Unga", "Sukuma", "Lunch", "Transport"];
+    var other = Object.keys(by).filter(function (k) { return main.indexOf(k) < 0; });
+    var otherSum = other.reduce(function (a, k) { return a + by[k]; }, 0);
+    var otherTxt = otherSum ? kes(otherSum) + " (" + other.map(function (k) { return k.replace(/^Other: /, "") + " " + kes(by[k]); }).join(", ") + ")" : "0";
+    var mi = M.length ? M.map(function (m) {
+      return kgShort(m.kg) + " kg | From: " + (m.source === "farm" ? "FARM pig tag " + m.tag : "BOUGHT from " + m.supplier + " @ KES " + kes(m.price));
+    }).join("; ") : "0 kg";
+    var f = day.farm || {};
+    function v(x) { return x == null || x === "" ? "not recorded" : x; }
+    var lines = [
+      "PORK CITY – " + prettyDate(day.date),
+      "STOCK (kg)",
+      "Opening: " + kgShort(day.openingKg),
+      "Meat in: " + mi,
+      "Sold: " + kgShort(t.soldKg) + " kg = KES " + kes(t.porkKes),
+      "Spoilt / home use: " + kgShort(t.wasteKg) + " kg",
+      "Closing (weighed): " + kgShort(day.closingKg),
+      "FOOD: ugali/plates KES " + kes(t.foodKes),
+      "EXPENSES: Salary " + kes(by.Salary || 0) + " | Unga " + kes(by.Unga || 0) + " | Sukuma " + kes(by.Sukuma || 0) + " | Lunch " + kes(by.Lunch || 0) +
+        " | Transport " + kes(by.Transport || 0) + " | Other " + otherTxt,
+      "MONEY: Till " + kes(t.till) + " | M-Pesa " + kes(t.mpesa) + " | Cash " + kes(t.cashNet) + " | Total " + kes(t.recorded),
+      "FARM: Pigs counted " + v(f.counted) + " | Born " + v(f.born) + " | Died " + v(f.died) + " | Feed bags used " + v(f.feedBags)
+    ];
+    var r = day.reasons || {};
+    if (r.cash) lines.push("Money note: " + r.cash);
+    if (r.stock) lines.push("Stock note: " + r.stock);
+    if (r.salary) lines.push("Salary note: " + r.salary);
+    if (f.sick) lines.push("SICK OR DEAD PIG: " + f.sick + " (Dr. Muthomi called?)");
+    if (day.handover && day.handover.amount) lines.push("Handover: KES " + kes(day.handover.amount) + " " + day.handover.method + (day.handover.code ? " " + day.handover.code : ""));
+    return lines.join("\n");
+  }
+
+  // ---------- receipts (58 mm = 32 characters a line; 80 mm = 48)
+  function pad(l, r, w) { l = String(l); r = String(r); var s = w - l.length - r.length; return s >= 1 ? l + new Array(s + 1).join(" ") + r : l + "\n" + new Array(Math.max(1, w - r.length) + 1).join(" ") + r; }
+  function center(s, w) { s = String(s); var p = Math.max(0, Math.floor((w - s.length) / 2)); return new Array(p + 1).join(" ") + s; }
+  function rule(w) { return new Array(w + 1).join("-"); }
+  function receiptText(sale, opts) {
+    opts = opts || {}; var w = opts.width || 32;
+    var out = [center("BELLAS PORK CITY", w), center("From our farm. To your fork.", w), center("Kithino, Tunyai ward", w), center("Tharaka-Nithi", w), center("0112 515 271 / 0721 669 631", w), rule(w)];
+    if (sale.void && opts.voidSlip) out.push(center("*** VOID ***", w), "Cancels receipt " + sale.receiptNo, "Reason: " + sale.void.reason, rule(w));
+    if (opts.copy) out.push(center("COPY", w));
+    out.push("Receipt " + sale.receiptNo, sale.dateTime, "Served by " + (sale.byName || "").split(" ")[0], rule(w));
+    (sale.lines || []).forEach(function (l) {
+      var q = l.kg != null ? kg3(l.kg) + " kg" : l.portion ? (PORTION_LABEL[l.portion] + " portion") : (l.qty + " x");
+      var at = l.item === "porkugali" ? "@" + l.unitPrice + "/100g" : l.kg != null ? "@" + kes(l.unitPrice) + "/kg" : l.portion ? "" : "@" + kes(l.unitPrice);
+      out.push(l.name);
+      out.push(pad("  " + q + " " + at, kes(l.charged), w));
+    });
+    out.push(rule(w), pad("TOTAL KES", kes(sale.total), w));
+    (sale.payments || []).forEach(function (p) { out.push(pad(p.type + (p.code ? " " + normCode(p.code) : ""), kes(p.amount), w)); });
+    if (sale.change) out.push(pad("Change", kes(sale.change), w));
+    out.push(rule(w), "Pay to Till 3014485");
+    out.push("Thank you.");
+    if (sale.inspected) out.push("Our pork is vet-inspected.");
+    out.push(center("NOT A TAX INVOICE", w));
+    return out.join("\n");
+  }
+
+  // ---------- receipt numbers and dates
+  function receiptNo(date, seq) { return "PC-" + date.replace(/-/g, "") + "-" + String(seq).padStart(4, "0"); }
+  function nextSeq(seqs) { var m = 0; seqs.forEach(function (s) { if (s > m) m = s; }); return m + 1; }
+  function seqProblems(seqs) {
+    var s = seqs.slice().sort(function (a, b) { return a - b; }), gaps = [], dups = [];
+    for (var i = 0; i < s.length; i++) {
+      if (i && s[i] === s[i - 1]) dups.push(s[i]);
+      if (i && s[i] - s[i - 1] > 1) for (var k = s[i - 1] + 1; k < s[i]; k++) gaps.push(k);
+    }
+    if (s.length && s[0] > 1) for (var j = 1; j < s[0]; j++) gaps.unshift(j);
+    return { gaps: gaps, dups: dups };
+  }
+  function addDays(iso, n) { var d = new Date(iso + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+  function missingDays(closed, from, today) {
+    var set = {}; closed.forEach(function (d) { set[d] = 1; }); var out = [];
+    if (!from) return out;
+    for (var d = from; d < today; d = addDays(d, 1)) if (!set[d]) out.push(d);
+    return out;
+  }
+  function dressing(live, carcass) { return live > 0 && carcass > 0 ? Math.round(carcass / live * 100) : null; }
+  function nairobiNow(date) {
+    var d = date || new Date(), n = new Date(d.getTime() + 3 * 3600 * 1000);
+    return { date: n.toISOString().slice(0, 10), time: n.toISOString().slice(11, 16) };
+  }
+  function csv(rows) {
+    return rows.map(function (r) { return r.map(function (v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(","); }).join("\n");
+  }
+
+  var api = { ITEMS: ITEMS, SIDES: SIDES, PORTIONS: PORTIONS, PORTION_LABEL: PORTION_LABEL, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    EXPENSE_CATS: EXPENSE_CATS, FARM: FARM, r3: r3, kes: kes, kg3: kg3, kgShort: kgShort, applyRounding: applyRounding, perKg: perKg,
+    lineFromKg: lineFromKg, lineFromKes: lineFromKes, platterLine: platterLine, sideBasis: sideBasis, suggestPortion: suggestPortion,
+    sideLine: sideLine, canAddSide: canAddSide, cartTotals: cartTotals, normCode: normCode, validCode: validCode,
+    checkPayments: checkPayments, paymentsNet: paymentsNet, dayTotals: dayTotals, closeChecks: closeChecks, reportText: reportText,
+    receiptText: receiptText, receiptNo: receiptNo, nextSeq: nextSeq, seqProblems: seqProblems, addDays: addDays,
+    missingDays: missingDays, dressing: dressing, nairobiNow: nairobiNow, prettyDate: prettyDate, csv: csv, live: live };
+  if (typeof module !== "undefined" && module.exports) module.exports = api; else root.POS = api;
+})(this);
+
+</script>
+<script>
+(function () {
+  "use strict";
+  var P = window.POS;
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  var K = P.kes, KG = P.kg3;
+  var COLS = ["days", "sales", "expenses", "meatin", "waste", "users", "config", "audit", "recon"];
+  var QKEY = "bpc-queue-v1", SKEY = "bpc-session-v1", DKEY = "bpc-device-v1";
+
+  // ------------------------------------------------------------------ local helpers
+  function ls(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || "null"); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
+  function uid(p) { return (p || "") + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  var device = ls(DKEY); if (!device) { device = uid("dev-"); ls(DKEY, device); }
+  function now() { var n = P.nairobiNow(); return { date: n.date, time: n.time, iso: new Date().toISOString() }; }
+  function since(days) { return P.addDays(now().date, -days); }
+
+  // ------------------------------------------------------------------ state
+  var S = {
+    db: null, user: null, isOwner: false, downloads: null, ready: false, offline: false,
+    server: {}, // col -> {id: data}
+    queue: ls(QKEY) || [], flushing: false, lastFlushError: null,
+    who: ls(SKEY), tab: "sell", cart: [], pay: [], customer: {}, lastSale: null, msg: null
+  };
+  COLS.forEach(function (c) { S.server[c] = {}; });
+  function all(col) {
+    var out = Object.assign({}, S.server[col]);
+    S.queue.forEach(function (q) { if (q.col === col) out[q.id] = Object.assign({ _pending: true }, q.data); });
+    return Object.keys(out).map(function (id) { return Object.assign({ id: id }, out[id]); });
+  }
+  function one(col, id) { return all(col).filter(function (d) { return d.id === id; })[0] || null; }
+  function settings() {
+    var s = one("config", "settings") || {};
+    var d = JSON.parse(JSON.stringify(P.DEFAULT_SETTINGS));
+    Object.keys(s).forEach(function (k) { if (k !== "id" && k !== "_pending" && s[k] != null) d[k] = s[k]; });
+    d.prices = Object.assign({}, P.DEFAULT_SETTINGS.prices, s.prices || {});
+    return d;
+  }
+  function pigs() { var p = one("config", "pigs"); return (p && p.list) || []; }
+  function openDay() { return all("days").filter(function (d) { return d.status === "open"; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0] || null; }
+  function forDate(col, date) { return all(col).filter(function (x) { return x.date === date; }); }
+  function totalsFor(day) { return P.dayTotals(day, forDate("sales", day.date), forDate("expenses", day.date), forDate("meatin", day.date), forDate("waste", day.date)); }
+  function role(r) { var order = { cashier: 1, manager: 2, owner: 3 }; return S.who && order[S.who.role] >= order[r]; }
+
+  // ------------------------------------------------------------------ writes: always through the queue, so nothing is lost when the signal drops
+  function write(col, id, data) {
+    data = Object.assign({}, data); delete data.id; delete data._pending;
+    S.queue = S.queue.filter(function (q) { return !(q.col === col && q.id === id); });
+    S.queue.push({ col: col, id: id, data: data, at: Date.now() });
+    ls(QKEY, S.queue);
+    renderTop(); flush();
+  }
+  function audit(action, target, detail) {
+    var t = now();
+    write("audit", uid("a-"), { at: t.iso, date: t.date, time: t.time, by: S.who ? S.who.name : "Unknown", role: S.who ? S.who.role : "", device: device, action: action, target: target || "", detail: detail || "" });
+  }
+  // ------------------------------------------------------------------ sync with the Google Sheet (no Claude sign-in)
+  // The phone is the working copy: every record is saved on the phone first, then sent to the Sheet in
+  // batches whenever there is signal. Every minute the phone pulls what other phones (e.g. Christabel's) changed.
+  var CONN_KEY = "bpc-conn-v1", CKEY = "bpc-cache-v2", SYNC_KEY = "bpc-lastsync-v1";
+  var CACHED = ["days", "users", "config", "sales", "expenses", "meatin", "waste", "recon", "audit"];
+  S.conn = ls(CONN_KEY); S.loaded = {}; S.lastSync = ls(SYNC_KEY) || null; S.lastPullOk = null;
+  (function readSetupLink() {
+    // setup link: https://<site>/#setup=<script url>|<shop key>  (sent once by Christabel)
+    var h = location.hash || "";
+    if (h.indexOf("#setup=") === 0) {
+      var v = decodeURIComponent(h.slice(7)).split("|");
+      if (/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(v[0]) && v[1] && v[1].length >= 16) { S.conn = { url: v[0], key: v[1] }; ls(CONN_KEY, S.conn); }
+      try { history.replaceState(null, "", location.pathname); } catch (e) { location.hash = ""; }
+    }
+  })();
+  function api(method, params, body) {
+    var url = S.conn.url + "?" + Object.keys(params).map(function (k) { return k + "=" + encodeURIComponent(params[k]); }).join("&");
+    var ctl = typeof AbortController !== "undefined" ? new AbortController() : null, t = ctl ? setTimeout(function () { ctl.abort(); }, 30000) : null;
+    return fetch(url, { method: method, redirect: "follow", headers: body ? { "Content-Type": "text/plain;charset=utf-8" } : undefined, body: body ? JSON.stringify(body) : undefined, signal: ctl ? ctl.signal : undefined })
+      .then(function (r) { if (t) clearTimeout(t); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (j) { if (!j || !j.ok) throw new Error((j && j.error) || "Sheet refused the request"); return j; });
+  }
+  function flush() {
+    if (S.flushing || !S.conn || !S.queue.length) return;
+    S.flushing = true;
+    var batch = S.queue.slice(0, 40);
+    api("POST", { action: "push" }, { key: S.conn.key, device: device, writes: batch.map(function (q) { return { col: q.col, id: q.id, data: q.data }; }) }).then(function (j) {
+      batch.forEach(function (q) { S.server[q.col][q.id] = q.data; });
+      S.queue = S.queue.filter(function (x) { return batch.indexOf(x) < 0; }); ls(QKEY, S.queue);
+      S.flushing = false; S.lastFlushError = null; S.offline = false; S.lastSync = j.time || new Date().toISOString(); cacheSoon(); renderTop();
+      if (S.queue.length) flush();
+    }, function (e) {
+      S.flushing = false; S.lastFlushError = String(e && e.message || e); S.offline = true;
+      if (/bad key/i.test(S.lastFlushError)) S.badKey = true;
+      renderTop(); setTimeout(flush, 15000);
+    });
+  }
+  window.addEventListener("online", function () { flush(); pull(); });
+  setInterval(function () { flush(); }, 20000);
+
+  function saveCache() {
+    try {
+      var keep = P.addDays(now().date, -62), c = { at: Date.now(), server: {} };
+      CACHED.forEach(function (col) {
+        var m = {}; Object.keys(S.server[col]).forEach(function (id) { var d = S.server[col][id]; if (col === "users" || col === "config" || col === "days" || !d.date || d.date >= keep) m[id] = d; });
+        if (col === "audit") { var ids = Object.keys(m).sort(function (x, y) { return (m[x].at || "") < (m[y].at || "") ? 1 : -1; }).slice(0, 200), a = {}; ids.forEach(function (i) { a[i] = m[i]; }); m = a; }
+        c.server[col] = m;
+      });
+      localStorage.setItem(CKEY, JSON.stringify(c));
+    } catch (e) { S.storageFull = true; }
+  }
+  var cacheTimer = null;
+  function cacheSoon() { clearTimeout(cacheTimer); cacheTimer = setTimeout(saveCache, 800); }
+  (function loadCache() {
+    var c = ls(CKEY);
+    if (c && c.server) { CACHED.forEach(function (col) { if (c.server[col]) S.server[col] = c.server[col]; }); S.ready = true; }
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
+  })();
+  var pulling = false;
+  function pull() {
+    if (!S.conn || pulling) return;
+    pulling = true;
+    var p = { action: "pull", key: S.conn.key, cutoff: P.addDays(now().date, -62) };
+    if (S.lastPullTime) p.since = S.lastPullTime;
+    api("GET", p).then(function (j) {
+      pulling = false; S.lastPullOk = Date.now(); S.offline = false; S.badKey = false;
+      Object.keys(j.data || {}).forEach(function (col) {
+        if (!S.server[col]) S.server[col] = {};
+        (j.data[col] || []).forEach(function (r) { S.server[col][r.id] = r.data; });
+        S.loaded[col] = true;
+      });
+      S.lastPullTime = j.time; ls(SYNC_KEY, j.time); S.lastSync = j.time; S.ready = true;
+      cacheSoon(); dataChanged();
+    }, function (e) {
+      pulling = false; S.offline = true; if (/bad key/i.test(String(e && e.message))) S.badKey = true;
+      S.ready = true; renderAll();
+    });
+  }
+  setInterval(pull, 60000);
+  (function boot() {
+    if (S.conn) { S.ready = S.ready || false; pull(); flush(); setTimeout(function () { if (!S.ready) { S.ready = true; renderAll(); } }, 4000); }
+    else S.ready = true;
+    renderAll();
+    if ("serviceWorker" in navigator && window.isSecureContext && /^https?:/.test(location.protocol)) { try { navigator.serviceWorker.register("sw.js"); } catch (e) { } }
+  })();
+  // No Claude sign-in: the owner role is claimed only while no owner PIN exists yet (first setup).
+  function ownerSetupOpen() { return !all("users").some(function (u) { return u.role === "owner" && u.pinHash; }); }
+
+  // ------------------------------------------------------------------ rendering
+  var pendingRender = false;
+  function dataChanged() {
+    renderTop();
+    // Never redraw over a form someone is filling in; redraw at their next action instead.
+    var a = document.activeElement;
+    if (dirty || (a && /INPUT|SELECT|TEXTAREA/.test(a.tagName)) || $("#sheet").firstChild) { pendingRender = true; return; }
+    renderView();
+  }
+  var dirty = false;
+  document.addEventListener("input", function (e) { if (e.target.closest && e.target.closest("#view")) dirty = true; }, true);
+  document.addEventListener("change", function (e) { if (e.target.closest && e.target.closest("#view")) dirty = true; }, true);
+  document.addEventListener("focusout", function () { setTimeout(function () { var a = document.activeElement; if (pendingRender && !dirty && !(a && /INPUT|SELECT|TEXTAREA/.test(a.tagName)) && !$("#sheet").firstChild) { pendingRender = false; renderView(); } }, 50); });
+  function renderAll() { renderTop(); renderView(); }
+
+  function renderTop() {
+    var st = $("#stat"), day = openDay(), html = [];
+    if (day) {
+      var t = totalsFor(day);
+      html.push('<span class="chip ok">Day open · ' + esc(P.prettyDate(day.date)) + "</span>");
+      html.push('<span class="chip ' + (t.stockLeft < 1 ? "bad" : "") + '">Stock ' + KG(t.stockLeft) + " kg</span>");
+      html.push('<span class="chip">KES ' + K(t.takings) + " · " + KG(t.soldKg) + " kg sold</span>");
+    } else if (S.ready) html.push('<span class="chip warn">No day open</span>');
+    if (S.who) html.push('<span class="chip">' + esc(S.who.name) + " · " + esc(S.who.role) + "</span>");
+    st.innerHTML = html.join("");
+    var b = [];
+    if (S.conn && S.badKey) b.push('<div class="banner bad">The Google Sheet did not accept this phone\'s shop key. Ask Christabel for a new setup link.</div>');
+    else if (S.conn && S.offline) b.push('<div class="banner warn">No signal. The counter keeps working; ' + (S.queue.length ? S.queue.length + " record" + (S.queue.length > 1 ? "s" : "") + " saved on this phone will" : "everything will") + " go to the Google Sheet when the signal is back. Do not clear the browser data on this phone.</div>");
+    else if (S.queue.length > 5) b.push('<div class="banner info">Sending ' + S.queue.length + " records to the Google Sheet…</div>");
+    if (S.storageFull) b.push('<div class="banner bad">This phone\'s storage for the counter is full. Connect to the internet so records can be sent, then call Christabel.</div>');
+    $("#banners").innerHTML = b.join("");
+    var tabs = $("#tabs");
+    if (!S.who) { tabs.hidden = true; return; }
+    tabs.hidden = false;
+    var list = [["sell", "Sell"], ["stock", "Stock"], ["expenses", "Expenses"], ["close", "Close day"]];
+    if (role("manager")) list.push(["owner", "Reports"]);
+    if (role("owner")) list.push(["settings", "Settings"]);
+    tabs.innerHTML = list.map(function (t) { return '<button class="tab" role="tab" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + "</button>"; }).join("") +
+      '<button class="tab" data-act="lock">Switch user</button>';
+  }
+
+  function renderView() {
+    var v = $("#view");
+    if (!S.conn) { v.innerHTML = viewConnect(); return; }
+    if (!S.ready) { v.innerHTML = '<div class="panel"><h2>Opening the counter</h2><p class="muted" role="status">Getting the latest from the Google Sheet…</p></div>'; return; }
+    if (!S.who) { v.innerHTML = viewSignIn(); return; }
+    var day = openDay();
+    var fn = { sell: viewSell, stock: viewStock, expenses: viewExpenses, close: viewClose, owner: viewOwner, settings: viewSettings }[S.tab] || viewSell;
+    if (!day && (S.tab === "sell" || S.tab === "stock" || S.tab === "expenses" || S.tab === "close")) { v.innerHTML = viewOpenDay(); return; }
+    v.innerHTML = fn(day);
+  }
+
+  function viewConnect() {
+    return '<div class="panel"><h2>Connect this phone</h2><p>Open the setup link Christabel sent on WhatsApp on this phone. It connects the counter to the Bellas Pork City Google Sheet once; nobody signs in after that.</p>' +
+      '<details><summary class="small">Or enter the details by hand</summary><div class="grid2"><label>Google Sheet web app address<input id="cn-url" placeholder="https://script.google.com/macros/s/…/exec" autocomplete="off"></label><label>Shop key<input id="cn-key" autocomplete="off"></label></div><p class="err" id="cn-err"></p><button class="btn primary" data-act="connect">Connect</button></details></div>';
+  }
+  function flash(text, kind) { S.msg = { text: text, kind: kind || "ok", t: Date.now(), tab: S.tab }; }
+  function msgHtml() { var m = S.msg; if (!m || Date.now() - m.t > 10000 || m.tab !== S.tab) return ""; return '<div class="banner ' + m.kind + '" role="status">' + esc(m.text) + "</div>"; }
+
+  // ------------------------------------------------------------------ sign in with PIN
+  async function hash(pin, salt) {
+    var data = new TextEncoder().encode(salt + ":" + pin);
+    try { var h = await crypto.subtle.digest("SHA-256", data); return Array.from(new Uint8Array(h)).map(function (b) { return b.toString(16).padStart(2, "0"); }).join(""); }
+    catch (e) { var x = 5381; for (var i = 0; i < data.length; i++) x = (x * 33) ^ data[i]; return "djb-" + (x >>> 0).toString(16); }
+  }
+  function users() { return all("users").filter(function (u) { return u.active !== false; }).sort(function (a, b) { return (a.order || 9) - (b.order || 9); }); }
+  function viewSignIn() {
+    var us = users();
+    if (!us.length && S.conn && !S.lastPullOk && !S.offline) return '<div class="panel"><h2>Loading staff…</h2></div>';
+    if (!us.length) return '<div class="panel"><h2>Staff list not set up</h2><p>No staff are on this counter yet.' + (ownerSetupOpen() ? ' First setup: <button class="btn primary" data-act="seed-users">Add Christabel, Kangai and Mama Doris</button>' : " Ask Christabel to set up the staff list.") + "</p></div>";
+    return '<div class="panel"><h2>Who is serving?</h2><p class="muted">Tap your name, then enter your PIN.</p><div class="tiles">' +
+      us.map(function (u) { return '<button class="tile" data-act="pick-user" data-id="' + esc(u.id) + '"><b>' + esc(u.name) + '</b><span>' + esc(u.role) + (u.pinHash ? "" : " · PIN not set") + "</span></button>"; }).join("") +
+      "</div></div>";
+  }
+  function pinSheet(title, u, onOk, extra) {
+    var pin = "";
+    sheet('<div class="panel" role="dialog" aria-label="' + esc(title) + '"><h3>' + esc(title) + '</h3><p class="muted small">' + esc(u ? u.name : "") + '</p>' + (extra || "") +
+      '<div class="dots" id="dots">&nbsp;</div><div class="pinpad">' + [1, 2, 3, 4, 5, 6, 7, 8, 9, "C", 0, "OK"].map(function (k) { return '<button class="btn" data-pin="' + k + '">' + k + "</button>"; }).join("") +
+      '</div><p class="err" id="pinerr"></p><button class="btn" data-act="close-sheet">Cancel</button></div>');
+    $("#sheet").onclick = async function (e) {
+      var b = e.target.closest("[data-pin]"); if (!b) return;
+      var k = b.getAttribute("data-pin");
+      if (k === "C") pin = ""; else if (k === "OK") { await onOk(pin, function (m) { $("#pinerr").textContent = m; pin = ""; $("#dots").innerHTML = "&nbsp;"; }); return; }
+      else if (pin.length < 8) pin += k;
+      $("#dots").textContent = pin.replace(/./g, "•") || " ";
+    };
+  }
+  function signIn(u) {
+    if (!u.pinHash) {
+      if (u.role === "owner" && ownerSetupOpen()) return setPinFlow(u, true);
+      flash(u.name + " has no PIN yet. Christabel sets PINs in Settings.", "warn"); renderView(); return;
+    }
+    pinSheet("Enter your PIN", u, async function (pin, fail) {
+      if ((await hash(pin, u.salt)) !== u.pinHash) return fail("Wrong PIN. Try again.");
+      S.who = { id: u.id, name: u.name, role: u.role }; ls(SKEY, S.who); closeSheet(); S.tab = "sell";
+      audit("Signed in", u.name, "device " + device); renderAll();
+    });
+  }
+  // Ask a manager (or the owner) to approve an action with their PIN
+  function approve(minRole, why, cb) {
+    if (role(minRole)) return cb(S.who);
+    var order = { manager: 2, owner: 3 };
+    var cands = users().filter(function (u) { return u.pinHash && ({ cashier: 1, manager: 2, owner: 3 }[u.role] >= order[minRole]); });
+    if (!cands.length) { alertSheet("No " + minRole + " PIN is set up yet. Christabel sets PINs in Settings."); return; }
+    var sel = '<label>Approved by<select id="apr">' + cands.map(function (u) { return '<option value="' + esc(u.id) + '">' + esc(u.name) + "</option>"; }).join("") + "</select></label><p class='small'>" + esc(why) + "</p>";
+    pinSheet((minRole === "owner" ? "Owner" : "Manager") + " PIN needed", null, async function (pin, fail) {
+      var u = cands.filter(function (c) { return c.id === $("#apr").value; })[0];
+      if ((await hash(pin, u.salt)) !== u.pinHash) return fail("Wrong PIN.");
+      closeSheet(); cb({ id: u.id, name: u.name, role: u.role });
+    }, sel);
+  }
+  function setPinFlow(u, selfSetup) {
+    var first = null;
+    pinSheet(first ? "Repeat the new PIN" : "Choose a new PIN (4 to 8 digits)", u, async function (pin, fail) {
+      if (!/^\d{4,8}$/.test(pin)) return fail("Use 4 to 8 digits.");
+      if (first === null) { first = pin; $("#pinerr").textContent = ""; $("#dots").innerHTML = "&nbsp;"; $(".panel h3", $("#sheet")).textContent = "Repeat the new PIN"; return fail(""); }
+      if (pin !== first) { first = null; $(".panel h3", $("#sheet")).textContent = "Choose a new PIN (4 to 8 digits)"; return fail("The two PINs did not match. Start again."); }
+      var salt = uid("s-"), h = await hash(pin, salt);
+      var doc = Object.assign({}, one("users", u.id), { salt: salt, pinHash: h, pinSetAt: now().iso }); delete doc.id; delete doc._pending;
+      write("users", u.id, doc); closeSheet();
+      if (selfSetup) { S.who = { id: u.id, name: u.name, role: u.role }; ls(SKEY, S.who); }
+      audit("PIN set", u.name, selfSetup ? "owner first setup" : "set by " + (S.who ? S.who.name : ""));
+      flash("PIN saved for " + u.name + ".", "ok"); renderAll();
+    });
+  }
+
+  // ------------------------------------------------------------------ sheets
+  function sheet(html) { $("#sheet").innerHTML = '<div class="sheet">' + html + "</div>"; var f = $("#sheet input, #sheet select, #sheet button"); if (f) f.focus(); }
+  function closeSheet() { $("#sheet").innerHTML = ""; $("#sheet").onclick = null; if (pendingRender) { pendingRender = false; renderView(); } }
+  function alertSheet(text) { sheet('<div class="panel"><p>' + esc(text) + '</p><button class="btn primary" data-act="close-sheet">OK</button></div>'); }
+
+  // ------------------------------------------------------------------ open day
+  function lastClosed() { return all("days").filter(function (d) { return d.status === "closed"; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0] || null; }
+  function viewOpenDay() {
+    var t = now(), prev = lastClosed(), s = settings(), done = one("days", t.date);
+    if (done && done.status === "closed") return msgHtml() + '<div class="panel"><h2>Today is closed</h2><p>' + esc(P.prettyDate(t.date)) + " was closed by " + esc(done.closedBy) + " at " + esc(done.closedTime) + ". A manager can reopen it under Close day.</p>" +
+      '<button class="btn" data-tab="close">Go to Close day</button></div>';
+    return msgHtml() + '<form class="panel" id="f-open"><h2>Open the day · ' + esc(P.prettyDate(t.date)) + "</h2>" +
+      '<div class="grid2"><label>Opening stock, weighed (kg)<input id="o-kg" type="number" step="0.001" min="0" inputmode="decimal" required></label>' +
+      '<div class="note">Yesterday\'s closing: <b>' + (prev ? KG(prev.closingKg) + " kg</b> (" + esc(P.prettyDate(prev.date)) + ")" : "no closed day yet</b>") + "</div></div>" +
+      '<label id="o-why-l" hidden>Opening is more than ' + s.openingDiffLimit + ' kg different from yesterday\'s closing. Say why.<input id="o-why"></label>' +
+      '<label class="check"><input type="checkbox" id="o-inopen"> Meat that came in this morning is already on the scale in this opening weight</label>' +
+      '<div class="note bio"><b>Biosecurity check (ASF).</b> Tick each one. Selling stays locked until all four are done.</div>' +
+      ['Footbath refreshed', 'Butchery boots and clothes are not the ones worn in the pig pens', 'Hands washed', 'No one went from the butchery to the pig pens today'].map(function (q, i) { return '<label class="check"><input type="checkbox" id="bio' + i + '" required> ' + q + "</label>"; }).join("") +
+      '<div class="grid2"><label>Cash float in the drawer at opening (KES)<input id="o-float" type="number" step="1" min="0" inputmode="numeric" placeholder="Not confirmed yet: 0 if none"></label>' +
+      (role("manager") ? '<label class="check"><input type="checkbox" id="o-offer"> Pork ugali offer on today (slow day)</label>' : '<p class="small muted">Pork ugali offer is off. A manager can switch it on from the Sell screen.</p>') + "</div>" +
+      '<p class="err" id="o-err"></p><button class="btn primary">Open the day</button></form>';
+  }
+  function submitOpen(e) {
+    e.preventDefault();
+    var t = now(), s = settings(), prev = lastClosed(), kg = P.r3($("#o-kg").value), err = $("#o-err");
+    if (!($("#o-kg").value !== "" && kg >= 0)) return (err.textContent = "Weigh the meat and enter the opening kg.");
+    for (var i = 0; i < 4; i++) if (!$("#bio" + i).checked) return (err.textContent = "Finish the biosecurity check first.");
+    var diff = prev ? P.r3(kg - prev.closingKg) : 0, why = $("#o-why").value.trim();
+    if (prev && Math.abs(diff) > s.openingDiffLimit && !$("#o-inopen").checked && !why) { $("#o-why-l").hidden = false; return (err.textContent = "Opening differs from yesterday's closing by " + KG(diff) + " kg. Say why."); }
+    var fl = $("#o-float").value;
+    var day = { date: t.date, status: "open", openingKg: kg, prevClosingKg: prev ? prev.closingKg : null, prevDate: prev ? prev.date : null,
+      openingDiff: diff, openingReason: why || ($("#o-inopen").checked ? "Meat received this morning is in the opening weight" : ""),
+      bio: { footbath: true, boots: true, hands: true, noVisitors: true, by: S.who.name, at: t.iso },
+      floatKes: fl === "" ? 0 : Math.round(+fl), floatEntered: fl !== "", offer: !!($("#o-offer") && $("#o-offer").checked),
+      openedBy: S.who.name, openedAt: t.iso, device: device };
+    write("days", t.date, day);
+    // Salary is fixed: KES 700 a day = chef/butcher 500 + farm hand 200, paid from the till (Christabel, 18 Oct 2026)
+    write("expenses", "pc-" + t.date + "-casual-chef", { date: t.date, category: "Salary", role: "chef", amount: s.salary.chef, centre: "Pork City", note: "Chef/butcher daily wage", by: S.who.name, at: t.iso, auto: true });
+    write("expenses", "pc-" + t.date + "-casual-farmhand", { date: t.date, category: "Salary", role: "farmhand", amount: s.salary.farmhand, centre: P.FARM, note: "Farm hand daily wage (paid from Pork City takings)", by: S.who.name, at: t.iso, auto: true });
+    audit("Day opened", t.date, "opening " + kg + " kg; float " + day.floatKes + "; offer " + (day.offer ? "on" : "off"));
+    flash("Day opened. Salary 700 (500 chef + 200 farm hand) added to expenses.", "ok"); S.tab = "sell"; renderAll();
+  }
+
+  // ------------------------------------------------------------------ sell
+  function usedCodes() { var u = {}; all("sales").forEach(function (s) { (s.payments || []).forEach(function (p) { if (p.code) u[P.normCode(p.code)] = s.receiptNo; }); }); return u; }
+  function viewSell(day) {
+    var s = settings(), t = totalsFor(day), ct = P.cartTotals(S.cart), left = P.r3(t.stockLeft - ct.porkKg);
+    var tiles = '<div class="tiles">' +
+      '<button class="tile hero ' + (day.offer ? "" : "off") + '" data-act="add" data-item="porkugali"><b>Pork ugali</b><span>KES ' + s.prices.porkugali + " per 100 g raw · " + (day.offer ? "offer ON today" : "offer off today") + "</span></button>" +
+      ["fresh", "premium", "cooked"].map(function (k) { return '<button class="tile" data-act="add" data-item="' + k + '"><b>' + P.ITEMS[k].name + "</b><span>KES " + K(s.prices[k]) + " / kg" + (k === "cooked" ? " raw" : "") + "</span></button>"; }).join("") +
+      '<button class="tile" data-act="add" data-item="platter"><b>Pork platter</b><span>KES ' + K(s.prices.platter) + " · 1 kg raw</span></button></div>" +
+      '<div class="section-label">Sides · only with pork</div><div class="tiles">' +
+      P.SIDES.map(function (k) { return '<button class="tile side" data-act="add" data-item="' + k + '"><b>' + P.ITEMS[k].name + "</b><span>" + P.PORTIONS.map(function (p) { return s.sidePrices[k][p]; }).join(" / ") + "</span></button>"; }).join("") + "</div>";
+    var cart = S.cart.length ? S.cart.map(function (l, i) {
+      var q = l.kg != null ? KG(l.kg) + " kg" : l.portion ? P.PORTION_LABEL[l.portion] + " portion" + (l.changed ? " (changed from " + P.PORTION_LABEL[l.suggested] + ")" : "") : l.qty + " ×";
+      return '<div class="line"><span><b>' + esc(l.name) + '</b><br><span class="small muted">' + esc(q) + (l.charged !== Math.round(l.computed) ? " · computed " + l.computed : "") + '</span></span><span>' + K(l.charged) + ' <button class="x" data-act="rm" data-i="' + i + '" aria-label="Remove">×</button></span></div>';
+    }).join("") : '<p class="muted">Tap an item to start a sale.</p>';
+    var payRows = S.pay.map(function (p, i) {
+      return '<div class="row"><b style="min-width:70px">' + p.type + '</b><label style="flex:1 1 110px">KES<input type="number" inputmode="numeric" data-pay="' + i + '" data-f="amount" value="' + (p.amount || "") + '"></label>' +
+        (p.type !== "Cash" ? '<label style="flex:2 1 160px">Transaction code<input data-pay="' + i + '" data-f="code" maxlength="12" autocapitalize="characters" value="' + esc(p.code || "") + '" placeholder="e.g. UJFEUAQL0V"></label>' : "") +
+        '<button class="btn small" data-act="rmpay" data-i="' + i + '">Remove</button></div>';
+    }).join("");
+    var block = S.cart.length && left < 0;
+    return msgHtml() +
+      (role("manager") ? '<div class="row"><label class="check"><input type="checkbox" id="offer-toggle" ' + (day.offer ? "checked" : "") + '> Pork ugali offer on today</label></div>' : "") +
+      '<div class="grid2"><section class="panel">' + tiles + "</section>" +
+      '<section class="panel"><h2>Sale</h2>' + cart +
+      '<div class="line"><span>Total</span><span class="total">KES ' + K(ct.total) + "</span></div>" +
+      (S.cart.length ? '<p class="small muted">Pork in this sale ' + KG(ct.porkKg) + " kg · stock after sale " + KG(left) + " kg</p>" : "") +
+      (block ? '<div class="banner bad">Not enough pork in stock for this sale. A manager must record meat in, or a correction, first.</div>' : "") +
+      (S.cart.length ? '<div class="section-label">Payment</div><div class="row"><button class="btn" data-act="addpay" data-t="Till">Till 3014485</button><button class="btn" data-act="addpay" data-t="M-Pesa">M-Pesa</button><button class="btn" data-act="addpay" data-t="Cash">Cash</button></div>' + payRows +
+        '<details><summary class="small">Customer details (optional)</summary><div class="grid2"><label>Name<input id="c-name" value="' + esc(S.customer.name || "") + '"></label><label>WhatsApp number<input id="c-phone" inputmode="tel" value="' + esc(S.customer.phone || "") + '" placeholder="07…"></label></div>' +
+        '<label class="check"><input type="checkbox" id="c-consent" ' + (S.customer.consent ? "checked" : "") + '> Customer agrees to get offers from Bellas Pork City on WhatsApp</label><p class="small muted">Sending a receipt is not consent. Only tick this if the customer said yes.</p></details>' +
+        '<p class="err" id="pay-err"></p><div class="row"><button class="btn primary" data-act="complete" ' + (block ? "disabled" : "") + '>Complete sale</button><button class="btn" data-act="clear">Clear</button></div>' : "") +
+      "</section></div>" + recentReceipts(day);
+  }
+  function recentReceipts(day) {
+    var list = forDate("sales", day.date).sort(function (a, b) { return b.seq - a.seq; }).slice(0, 12);
+    if (!list.length) return "";
+    return '<section class="panel"><h3>Recent receipts</h3><div class="scroll"><table><thead><tr><th>Receipt</th><th>Time</th><th class="n">KES</th><th>Paid</th><th></th></tr></thead><tbody>' +
+      list.map(function (s) {
+        return "<tr><td>" + esc(s.receiptNo) + (s._pending ? ' <span class="pill warn">not saved yet</span>' : "") + (s.void ? ' <span class="pill bad">void</span>' : "") + "</td><td>" + esc(s.time) + '</td><td class="n">' + K(s.total) + "</td><td>" + esc((s.payments || []).map(function (p) { return p.type; }).join(" + ")) +
+          '</td><td><button class="btn small" data-act="show-receipt" data-id="' + esc(s.id) + '">Receipt</button>' + (s.void ? "" : ' <button class="btn small" data-act="void" data-id="' + esc(s.id) + '">Void</button>') + "</td></tr>";
+      }).join("") + "</tbody></table></div></section>";
+  }
+  function addItem(key, day) {
+    var s = settings(), it = P.ITEMS[key];
+    if (key === "porkugali" && !day.offer) {
+      sheet('<div class="panel"><h3>Pork ugali offer is off today</h3><p>Pork ugali is the slow-day offer. A manager switches it on for the day.</p><div class="row">' +
+        '<button class="btn primary" data-act="offer-on">Manager: switch on</button><button class="btn" data-act="close-sheet">Cancel</button></div></div>'); return;
+    }
+    if (it.kind === "kg") {
+      sheet('<form class="panel" id="f-kg"><h3>' + esc(it.name) + '</h3><p class="small muted">' + esc(it.note || "") + " KES " + K(key === "porkugali" ? s.prices.porkugali : s.prices[key]) + " per " + esc(it.per) + "</p>" +
+        '<div class="seg" role="group"><button type="button" data-mode="kg" aria-pressed="true">By weight (kg)</button><button type="button" data-mode="kes" aria-pressed="false">By money (KES)</button></div>' +
+        '<label id="kg-l">Weight in kg' + (it.line === "Kitchen" ? " (raw, before cooking)" : "") + '<input id="kg-v" type="number" step="0.001" min="0" inputmode="decimal" required></label>' +
+        '<div class="kv" id="kg-prev"></div><label>Amount charged (KES)<input id="kg-charged" type="number" step="1" min="0" inputmode="numeric"></label>' +
+        '<p class="small muted">The amount charged starts at the computed price. Change it only if you charged a different amount; both are kept so Christabel can choose the rounding rule.</p>' +
+        '<p class="err" id="kg-err"></p><div class="row"><button class="btn primary">Add to sale</button><button class="btn" type="button" data-act="close-sheet">Cancel</button></div></form>');
+      var mode = "kg", line = null;
+      var upd = function () {
+        var v = +$("#kg-v").value; line = null; $("#kg-err").textContent = "";
+        try { if (v > 0) line = mode === "kg" ? P.lineFromKg(key, v, s) : P.lineFromKes(key, v, s); } catch (e) { }
+        $("#kg-prev").innerHTML = line ? "<dt>Weight</dt><dd>" + KG(line.kg) + " kg</dd><dt>Computed</dt><dd>KES " + line.computed + "</dd>" : "";
+        if (line) $("#kg-charged").value = line.charged;
+      };
+      $("#sheet").onclick = function (e) { var b = e.target.closest("[data-mode]"); if (!b) return; mode = b.getAttribute("data-mode"); document.querySelectorAll("[data-mode]").forEach(function (x) { x.setAttribute("aria-pressed", x === b); }); $("#kg-l").firstChild.textContent = mode === "kg" ? "Weight in kg" : "Amount in KES"; $("#kg-v").step = mode === "kg" ? "0.001" : "1"; upd(); };
+      $("#kg-v").addEventListener("input", upd);
+      $("#f-kg").addEventListener("submit", function (e) {
+        e.preventDefault(); if (!line) return ($("#kg-err").textContent = mode === "kg" ? "Enter the weight in kg." : "Enter the amount in KES.");
+        var ch = Math.round(+$("#kg-charged").value); if (!(ch > 0)) return ($("#kg-err").textContent = "Enter the amount charged.");
+        line.charged = ch; S.cart.push(line); closeSheet(); renderView();
+      });
+      return;
+    }
+    if (key === "platter") { S.cart.push(P.platterLine(1, s)); renderView(); return; }
+    // side
+    var c = P.canAddSide(key, S.cart, s);
+    if (!c.ok) { alertSheet(c.why); return; }
+    var sug = P.suggestPortion(c.basis.kg);
+    sheet('<div class="panel"><h3>' + esc(it.name) + '</h3><p class="small">Pork in this sale: ' + KG(c.basis.kg) + " kg. " + (sug ? "Suggested portion: <b>" + P.PORTION_LABEL[sug] + "</b>." : "Above 1 kg: choose the portion (add more than one if needed).") + "</p>" +
+      '<div class="tiles">' + P.PORTIONS.map(function (p) { return '<button class="tile side" data-portion="' + p + '"' + (p === sug ? ' style="border-color:var(--red);border-width:2px"' : "") + "><b>" + P.PORTION_LABEL[p] + "</b><span>KES " + s.sidePrices[key][p] + "</span></button>"; }).join("") +
+      '</div><button class="btn" data-act="close-sheet">Cancel</button></div>');
+    $("#sheet").onclick = function (e) { var b = e.target.closest("[data-portion]"); if (!b) return; S.cart.push(P.sideLine(key, b.getAttribute("data-portion"), s, sug)); closeSheet(); renderView(); };
+  }
+  function nextSeqFor(date) { return P.nextSeq(forDate("sales", date).map(function (x) { return x.seq || 0; })); }
+  function completeSale(day) {
+    var err = $("#pay-err"), ct = P.cartTotals(S.cart), t = totalsFor(day);
+    readPayInputs(); readCustomer();
+    if (P.r3(t.stockLeft - ct.porkKg) < 0) return (err.textContent = "Not enough pork in stock.");
+    var chk = P.checkPayments(S.pay, ct.total, usedCodes());
+    if (!chk.ok) return (err.textContent = chk.errors.join(" "));
+    var n = now(), seq = nextSeqFor(day.date), id = "s-" + day.date + "-" + device.slice(-6) + "-" + uid();
+    var inspected = forDate("meatin", day.date).length ? P.live(forDate("meatin", day.date)).every(function (m) { return m.inspected; }) : !!lastInspection();
+    var sale = { date: day.date, seq: seq, receiptNo: P.receiptNo(day.date, seq), time: n.time, at: n.iso, dateTime: P.prettyDate(n.date) + " " + n.time,
+      by: S.who.id, byName: S.who.name, device: device, lines: S.cart, total: ct.total, computed: ct.computed, porkKg: ct.porkKg,
+      payments: S.pay.map(function (p) { return { type: p.type, amount: Math.round(+p.amount), code: p.code ? P.normCode(p.code) : null }; }), change: chk.change,
+      inspected: inspected, offerDay: !!day.offer, customer: S.customer.phone || S.customer.name ? { name: S.customer.name || "", phone: S.customer.phone || "", consent: !!S.customer.consent, consentDate: S.customer.consent ? n.date : null } : null };
+    write("sales", id, sale);
+    S.lastSale = id; S.cart = []; S.pay = []; S.customer = {};
+    showReceipt(Object.assign({ id: id }, sale), false);
+    renderView();
+  }
+  function lastInspection() { var m = P.live(all("meatin")).sort(function (a, b) { return a.at < b.at ? 1 : -1; })[0]; return m && m.inspected; }
+  function readPayInputs() { document.querySelectorAll("[data-pay]").forEach(function (el) { var p = S.pay[+el.getAttribute("data-pay")]; if (p) p[el.getAttribute("data-f")] = el.value; }); }
+  function readCustomer() { if ($("#c-name")) S.customer = { name: $("#c-name").value.trim(), phone: $("#c-phone").value.trim(), consent: $("#c-consent").checked }; }
+  function waNumber(p) { p = String(p || "").replace(/[^\d+]/g, ""); if (/^0[17]\d{8}$/.test(p)) return "254" + p.slice(1); if (/^\+?254[17]\d{8}$/.test(p)) return p.replace("+", ""); return null; }
+  function showReceipt(sale, copy, voidSlip) {
+    var w = (settings().paperWidth || 32), txt = P.receiptText(sale, { width: w, copy: copy, voidSlip: voidSlip });
+    var phone = sale.customer && sale.customer.phone, wa = waNumber(phone);
+    // WhatsApp shows text between ``` in a fixed-width font, so the columns line up like the printed receipt
+    var waTxt = "```\n" + txt + "\n```";
+    sheet('<div class="panel"><h3>' + (voidSlip ? "Void slip" : "Sale saved") + " · " + esc(sale.receiptNo) + "</h3>" + (sale.change ? '<div class="banner ok">Give change: KES ' + K(sale.change) + "</div>" : "") +
+      '<div class="receipt" id="rcpt">' + esc(txt) + "</div>" +
+      '<label>Customer WhatsApp number<input id="r-phone" inputmode="tel" value="' + esc(phone || "") + '" placeholder="07…"></label>' +
+      '<div class="row"><a class="btn dark" id="r-wa" target="_blank" rel="noopener" href="' + (wa ? "https://wa.me/" + wa + "?text=" + encodeURIComponent(waTxt) : "#") + '">Send e-receipt on WhatsApp</a>' +
+      '<button class="btn" data-act="print-receipt">Print</button><button class="btn" data-act="copy-receipt">Copy text</button><button class="btn" data-act="save-receipt" data-id="' + esc(sale.id) + '">Save for printer app</button></div>' +
+      '<p class="small muted">WhatsApp opens with the receipt ready; you press Send. To print, save the receipt and open it in the Bluetooth printer app.</p><p class="err" id="r-err"></p>' +
+      '<button class="btn primary" data-act="close-sheet">Done</button></div>');
+    var inp = $("#r-phone"); inp.addEventListener("input", function () { var n = waNumber(inp.value); $("#r-wa").href = n ? "https://wa.me/" + n + "?text=" + encodeURIComponent(waTxt) : "#"; });
+    $("#r-wa").addEventListener("click", function (e) { if (!waNumber(inp.value)) { e.preventDefault(); $("#r-err").textContent = "Enter the customer's number, e.g. 0712 345 678."; } });
+    S.receiptText = txt; S.receiptFile = sale.receiptNo + (copy ? "-COPY" : "") + (voidSlip ? "-VOID" : "") + ".txt";
+  }
+  function voidSale(id) {
+    var s = one("sales", id); if (!s || s.void) return;
+    approve("manager", "Voiding receipt " + s.receiptNo + " (KES " + K(s.total) + "). The sale stays on record, marked void.", function (by) {
+      sheet('<form class="panel" id="f-void"><h3>Void ' + esc(s.receiptNo) + '</h3><label>Reason<input id="v-why" required></label><p class="err" id="v-err"></p><div class="row"><button class="btn primary">Void sale</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
+      $("#f-void").addEventListener("submit", function (e) {
+        e.preventDefault(); var why = $("#v-why").value.trim(); if (!why) return ($("#v-err").textContent = "Say why.");
+        var d = Object.assign({}, s, { void: { by: by.name, reason: why, at: now().iso } }); write("sales", id, d);
+        audit("Sale voided", s.receiptNo, "KES " + s.total + "; approved by " + by.name + "; " + why);
+        showReceipt(Object.assign({ id: id }, d), false, true); renderView();
+      });
+    });
+  }
+
+  // ------------------------------------------------------------------ stock: meat in and waste
+  function viewStock(day) {
+    var t = totalsFor(day), s = settings();
+    var mi = forDate("meatin", day.date), w = forDate("waste", day.date);
+    var pl = pigs().filter(function (p) { return p.role !== "Hired boar"; });
+    return msgHtml() + '<div class="grid2"><section class="panel"><h2>Stock today</h2><dl class="kv"><dt>Opening (weighed)</dt><dd>' + KG(day.openingKg) + " kg</dd><dt>Meat in (added to stock)</dt><dd>" + KG(t.meatInStock) + " kg</dd><dt>Sold</dt><dd>" + KG(t.soldKg) + " kg</dd><dt>Spoilt / home use</dt><dd>" + KG(t.wasteKg) + " kg</dd><dt><b>Left now</b></dt><dd><b>" + KG(t.stockLeft) + " kg</b></dd></dl>" +
+      (mi.length ? '<h3>Meat in today</h3>' + mi.map(function (m) { return '<p class="small">' + (m.void ? '<span class="pill bad">void</span> ' : "") + (m.source === "farm" ? "Farm pig " + esc(m.tag) + ": " + KG(m.kg) + " kg carcass (" + m.live + " kg live, dressing " + P.dressing(m.live, m.kg) + "%)" : "Bought from " + esc(m.supplier) + ": " + KG(m.kg) + " kg for KES " + K(m.price)) + (m.inOpening ? " · in the opening weight" : "") + "</p>"; }).join("") : "") +
+      (w.length ? '<h3>Spoilt / home use</h3>' + w.map(function (x) { return '<p class="small">' + KG(x.kg) + " kg · " + esc(x.reason) + " · " + esc(x.disposal) + "</p>"; }).join("") : "") + "</section>" +
+      '<form class="panel" id="f-meat"><h2>Meat in</h2><p class="small muted">Manager only. Meat is accepted only with inspection.</p><div class="seg" role="group"><button type="button" data-src="farm" aria-pressed="true">From our farm</button><button type="button" data-src="bought" aria-pressed="false">Bought in</button></div>' +
+      '<div id="m-farm" class="grid2"><label>Pig (ear tag)<select id="m-tag"><option value="">Choose…</option>' + pl.map(function (p) { return '<option value="' + esc(p.tag) + '">' + esc(p.tag + " · " + (p.breed || "") + " " + (p.sex === "M" ? "male" : "female") + " · " + (p.role || "")) + "</option>"; }).join("") + "</select></label>" +
+      '<label>Slaughter date<input id="m-date" type="date" value="' + day.date + '"></label><label>Live weight (kg)<input id="m-live" type="number" step="0.1" min="0" inputmode="decimal"></label><label>Carcass weight (kg)<input id="m-carc" type="number" step="0.001" min="0" inputmode="decimal"></label>' +
+      '<label>Inspector name<input id="m-insp"></label><label>Last medicine (name and date, or "none")<input id="m-med"></label>' +
+      '<label class="check"><input type="checkbox" id="m-inspected"> Meat inspection done</label><label class="check"><input type="checkbox" id="m-wd"> Medicine withdrawal period is over (or no medicine)</label>' +
+      '<p class="small muted" id="m-dress"></p><p class="small muted">Pigs list from Farm Office (active pigs, hired boar left out). A pig without an ear tag must be tagged in Farm Office first.</p></div>' +
+      '<div id="m-bought" class="grid2" hidden><label>Supplier<select id="m-sup">' + suppliersList().map(function (x) { return "<option>" + esc(x) + "</option>"; }).join("") + '<option value="__new">New supplier…</option></select></label><label id="m-sup-new-l" hidden>New supplier name<input id="m-sup-new"></label>' +
+      '<label>Kg bought<input id="m-bkg" type="number" step="0.001" min="0" inputmode="decimal"></label><label>Price paid (KES)<input id="m-price" type="number" step="1" min="0" inputmode="numeric"></label>' +
+      '<label>Paid by<select id="m-paid"><option>M-Pesa</option><option>Cash from till</option><option>Cash by owner</option><option>Not paid yet (owed)</option></select></label><label>M-Pesa code (if M-Pesa)<input id="m-code" maxlength="12" autocapitalize="characters"></label>' +
+      '<label class="check"><input type="checkbox" id="m-stamp"> Inspection stamp seen on the meat</label></div>' +
+      '<label class="check"><input type="checkbox" id="m-inopen"> This meat is already in today\'s opening weight (came in before opening)</label>' +
+      '<p class="err" id="m-err"></p><button class="btn primary">Save meat in</button></form>' +
+      '<form class="panel" id="f-waste"><h2>Spoilt or home use</h2><div class="note bio">Never give meat scraps, bones, plate waste or spoilt meat to the pigs. This is how ASF spreads.</div>' +
+      '<div class="grid2"><label>Kg<input id="w-kg" type="number" step="0.001" min="0" inputmode="decimal"></label><label>Reason<select id="w-why"><option>Spoilt</option><option>Trimmings</option><option>Staff meal</option><option>Home use</option></select></label>' +
+      '<label>How it was disposed of<select id="w-disp"><option value="">Choose…</option>' + s.disposal.map(function (x) { return "<option>" + esc(x) + "</option>"; }).join("") + "</select></label></div>" +
+      '<p class="err" id="w-err"></p><button class="btn primary">Save</button></form></div>';
+  }
+  function suppliersList() { var l = settings().suppliers.slice(); all("meatin").forEach(function (m) { if (m.supplier && l.indexOf(m.supplier) < 0) l.push(m.supplier); }); return l; }
+  function submitMeat(e) {
+    e.preventDefault();
+    var day = openDay(), err = $("#m-err"), farm = !$("#m-farm").hidden, n = now(), s = settings();
+    var rec = { date: day.date, at: n.iso, time: n.time, inOpening: $("#m-inopen").checked };
+    if (farm) {
+      var tag = $("#m-tag").value, live = +$("#m-live").value, carc = P.r3($("#m-carc").value);
+      if (!tag) return (err.textContent = "Choose the pig's ear tag.");
+      if (!(live > 0 && carc > 0)) return (err.textContent = "Enter live weight and carcass weight.");
+      if (carc >= live) return (err.textContent = "Carcass weight must be less than live weight.");
+      if (!$("#m-inspected").checked || !$("#m-insp").value.trim()) return (err.textContent = "Blocked: meat inspection must be done, with the inspector's name. Do not sell this meat.");
+      if (!$("#m-wd").checked) return (err.textContent = "Blocked: the medicine withdrawal period must be over before the meat is sold. Call Dr. Muthomi.");
+      Object.assign(rec, { source: "farm", tag: tag, live: live, kg: carc, slaughterDate: $("#m-date").value, inspected: true, inspector: $("#m-insp").value.trim(), lastMedicine: $("#m-med").value.trim() || "Not recorded", withdrawalOk: true, farmOfficeSync: "pending" });
+    } else {
+      var sup = $("#m-sup").value === "__new" ? $("#m-sup-new").value.trim() : $("#m-sup").value, kg = P.r3($("#m-bkg").value), price = Math.round(+$("#m-price").value), paid = $("#m-paid").value, code = P.normCode($("#m-code").value);
+      if (!sup) return (err.textContent = "Enter the supplier.");
+      if (!(kg > 0) || !(price > 0)) return (err.textContent = "Kg and price are both required. Meat cannot be saved without them.");
+      if (paid === "M-Pesa" && !P.validCode(code)) return (err.textContent = "Enter the 10-character M-Pesa code.");
+      if (!$("#m-stamp").checked) return (err.textContent = "Blocked: no inspection stamp, no meat. Do not accept it. Call the manager.");
+      Object.assign(rec, { source: "bought", supplier: sup, kg: kg, price: price, paidBy: paid, code: paid === "M-Pesa" ? code : null, inspected: true, stampSeen: true, pricePerKg: Math.round(price / kg) });
+    }
+    approve("manager", "Recording meat in.", function (by) {
+      rec.by = by.name; write("meatin", uid("m-" + day.date + "-"), rec);
+      if (!farm && rec.paidBy === "Cash from till") write("expenses", uid("e-" + day.date + "-"), { date: day.date, category: "Meat bought", amount: rec.price, centre: "Pork City", note: rec.kg + " kg from " + rec.supplier, by: by.name, at: n.iso });
+      audit("Meat in", farm ? rec.tag : rec.supplier, rec.kg + " kg" + (farm ? " carcass, " + rec.live + " kg live" : ", KES " + rec.price) + "; by " + by.name);
+      flash("Meat in saved: " + KG(rec.kg) + " kg." + (farm ? " Farm Office marks " + rec.tag + " as slaughtered at the nightly update." : ""), "ok"); renderAll();
+    });
+  }
+  function submitWaste(e) {
+    e.preventDefault(); var day = openDay(), kg = P.r3($("#w-kg").value), err = $("#w-err");
+    if (!(kg > 0)) return (err.textContent = "Enter the kg.");
+    if (!$("#w-disp").value) return (err.textContent = "Say how it was disposed of.");
+    var n = now();
+    write("waste", uid("w-" + day.date + "-"), { date: day.date, kg: kg, reason: $("#w-why").value, disposal: $("#w-disp").value, by: S.who.name, at: n.iso, time: n.time });
+    audit("Spoilt / home use", day.date, kg + " kg " + $("#w-why").value + ", " + $("#w-disp").value);
+    flash("Saved " + KG(kg) + " kg " + $("#w-why").value.toLowerCase() + ".", "ok"); renderAll();
+  }
+
+  // ------------------------------------------------------------------ expenses
+  function viewExpenses(day) {
+    var list = forDate("expenses", day.date).sort(function (a, b) { return (a.at || "") < (b.at || "") ? -1 : 1; }), t = totalsFor(day);
+    return msgHtml() + '<div class="grid2"><section class="panel"><h2>Expenses today</h2><div class="scroll"><table><thead><tr><th>Item</th><th>Cost centre</th><th class="n">KES</th><th></th></tr></thead><tbody>' +
+      list.map(function (x) { return "<tr><td>" + esc(x.category === "Salary" ? (x.role === "chef" ? "Salary, chef/butcher" : "Salary, farm hand") : x.category) + (x.note && x.category !== "Salary" ? '<br><span class="small muted">' + esc(x.note) + "</span>" : "") + (x.void ? ' <span class="pill bad">void: ' + esc(x.void.reason) + "</span>" : "") + "</td><td class=small>" + esc(x.centre || "") + '</td><td class="n">' + K(x.amount) + "</td><td>" + (x.void ? "" : '<button class="btn small" data-act="void-exp" data-id="' + esc(x.id) + '">Void</button>') + "</td></tr>"; }).join("") +
+      '</tbody><tfoot><tr><th colspan="2">Total paid from the till</th><th class="n">' + K(t.expensesKes) + '</th><th></th></tr><tr><td colspan="2" class="small">Of which farm costs paid by Pork City</td><td class="n small">' + K(t.farmCostsKes) + "</td><td></td></tr></tfoot></table></div>" +
+      (!t.salaryOk ? '<div class="banner warn">Salary today is KES ' + K(t.salary) + ", not 700 (500 chef + 200 farm hand). You will be asked why at Close day.</div>" : "") + "</section>" +
+      '<form class="panel" id="f-exp"><h2>Add an expense</h2><div class="grid2"><label>What<select id="x-cat">' + P.EXPENSE_CATS.map(function (c) { return '<option value="' + esc(c.key) + '">' + esc(c.key) + (c.centre === P.FARM ? " (farm)" : "") + "</option>"; }).join("") + "</select></label>" +
+      '<label>Amount (KES)<input id="x-amt" type="number" step="1" min="0" inputmode="numeric"></label></div>' +
+      '<label id="x-note-l">Note<input id="x-note" placeholder="Say what, e.g. 2 kg tomatoes"></label>' +
+      '<label id="x-centre-l" hidden>Cost centre<select id="x-centre"><option>Pork City</option><option>' + P.FARM + "</option></select></label>" +
+      '<label class="check" id="x-pig-l" hidden><input type="checkbox" id="x-pigfarm"> Bought from another pig farm</label>' +
+      '<div class="note bio" id="x-bio" hidden><b>ASF rule for items from another pig farm:</b> disinfect the bags, or empty them into our own containers, before they go into the feed store. Burn the empty bags. Never return them.</div>' +
+      '<p class="small muted">Paid from the till cash. Salary 700 is added automatically when the day opens.</p><p class="err" id="x-err"></p><button class="btn primary">Save expense</button></form></div>';
+  }
+  function expCatChange() {
+    var c = $("#x-cat").value; $("#x-centre-l").hidden = c !== "Other";
+    var feed = c === "Pig feed" || c === "Peas for pigs"; $("#x-pig-l").hidden = !feed; $("#x-bio").hidden = !(feed && $("#x-pigfarm").checked);
+  }
+  function submitExp(e) {
+    e.preventDefault(); var day = openDay(), cat = $("#x-cat").value, amt = Math.round(+$("#x-amt").value), note = $("#x-note").value.trim(), err = $("#x-err");
+    if (!(amt > 0)) return (err.textContent = "Enter the amount.");
+    if (cat === "Other" && !note) return (err.textContent = "Say what the money was for.");
+    var def = P.EXPENSE_CATS.filter(function (c) { return c.key === cat; })[0], n = now();
+    var rec = { date: day.date, category: cat, amount: amt, centre: def.centre || $("#x-centre").value, note: note, fromPigFarm: !!$("#x-pigfarm").checked, by: S.who.name, at: n.iso, time: n.time };
+    write("expenses", uid("e-" + day.date + "-"), rec);
+    audit("Expense", cat, "KES " + amt + (note ? "; " + note : ""));
+    flash("Saved " + cat + " KES " + K(amt) + "." + (rec.fromPigFarm ? " Remember: disinfect or empty the bags, burn them, never return them." : ""), rec.fromPigFarm ? "warn" : "ok"); renderView();
+  }
+  function voidExp(id) {
+    var x = one("expenses", id);
+    sheet('<form class="panel" id="f-vx"><h3>Void ' + esc(x.category) + " KES " + K(x.amount) + '</h3><label>Reason<input id="vx-why" required></label><p class="err" id="vx-err"></p><div class="row"><button class="btn primary">Void</button><button class="btn" type="button" data-act="close-sheet">Cancel</button></div></form>');
+    $("#f-vx").addEventListener("submit", function (e) {
+      e.preventDefault(); var why = $("#vx-why").value.trim(); if (!why) return ($("#vx-err").textContent = "Say why.");
+      write("expenses", id, Object.assign({}, x, { void: { by: S.who.name, reason: why, at: now().iso } }));
+      audit("Expense voided", x.category, "KES " + x.amount + "; " + why); closeSheet(); renderAll();
+    });
+  }
+
+  // ------------------------------------------------------------------ close day
+  function viewClose(day) {
+    if (!day) return "";
+    var t = totalsFor(day), s = settings(), c = day._draft || {};
+    var probe = Object.assign({}, day, { closingKg: c.closingKg != null ? c.closingKg : null, cashCounted: c.cashCounted != null ? c.cashCounted : null });
+    var tt = totalsFor(probe), checks = P.closeChecks(probe, tt, s);
+    return msgHtml() + '<div class="grid2"><section class="panel"><h2>Close ' + esc(P.prettyDate(day.date)) + '</h2><dl class="kv">' +
+      "<dt>Pork sold</dt><dd>" + KG(t.soldKg) + " kg = KES " + K(t.porkKes) + "</dd><dt>Food (sides)</dt><dd>KES " + K(t.foodKes) + "</dd><dt>Expenses</dt><dd>KES " + K(t.expensesKes) + "</dd>" +
+      "<dt><b>Expected money</b></dt><dd><b>KES " + K(t.net) + "</b></dd><dt>Till (Kopo Kopo)</dt><dd>KES " + K(t.till) + "</dd><dt>M-Pesa</dt><dd>KES " + K(t.mpesa) + "</dd><dt>Cash that should be in the drawer</dt><dd>KES " + K(t.expectedCash) + " + float " + K(day.floatKes) + "</dd>" +
+      (t.roundingDiff ? "<dt>Charged vs computed (rounding)</dt><dd>KES " + t.roundingDiff + "</dd>" : "") + "<dt>Sales</dt><dd>" + t.saleCount + "</dd></dl></section>" +
+      '<form class="panel" id="f-close"><h2>Count and weigh</h2><div class="grid2"><label>Closing stock, weighed (kg)<input id="c-kg" type="number" step="0.001" min="0" inputmode="decimal" value="' + (c.closingKg != null ? c.closingKg : "") + '"></label>' +
+      '<label>Cash counted in the drawer (KES)<input id="c-cash" type="number" step="1" min="0" inputmode="numeric" value="' + (c.cashCounted != null ? c.cashCounted : "") + '"></label></div>' +
+      '<label class="check"><input type="checkbox" id="c-weighed" ' + (c.weighed ? "checked" : "") + "> I weighed the closing stock on the scale</label>" +
+      '<button class="btn" type="button" data-act="check-close">Check</button>' +
+      (tt.cashGap != null || tt.stockGap != null ? '<dl class="kv"><dt>Money recorded</dt><dd>KES ' + K(tt.recorded) + '</dd><dt>Money gap</dt><dd><span class="pill ' + (tt.cashGap ? (Math.abs(tt.cashGap) > s.cashGapLimit ? "bad" : "warn") : "ok") + '">' + (tt.cashGap == null ? "–" : tt.cashGap === 0 ? "0" : (tt.cashGap < 0 ? "short " : "over ") + K(Math.abs(tt.cashGap))) + "</span></dd>" +
+        '<dt>Stock expected</dt><dd>' + KG(tt.stockLeft) + ' kg</dd><dt>Stock gap</dt><dd><span class="pill ' + (tt.stockGap ? (Math.abs(tt.stockGap) > s.stockGapLimit ? "bad" : "warn") : "ok") + '">' + (tt.stockGap == null ? "–" : (tt.stockGap > 0 ? "+" : "") + KG(tt.stockGap) + " kg") + "</span></dd></dl>" : "") +
+      checks.needReason.map(function (n) { return "<label>" + esc(n.text) + '<input id="why-' + n.key + '" value="' + esc((c.reasons || {})[n.key] || "") + '" placeholder="e.g. KES 550 cash carried to tomorrow"></label>'; }).join("") +
+      '<h3>Cash handover</h3><div class="grid2"><label>Amount (KES)<input id="h-amt" type="number" step="1" min="0" inputmode="numeric" value="' + esc((c.handover || {}).amount || "") + '"></label><label>How<select id="h-how"><option>Sent to Christabel by M-Pesa</option><option>Carried to tomorrow</option><option>Held by the manager</option></select></label><label>M-Pesa code (if sent)<input id="h-code" maxlength="12" autocapitalize="characters" value="' + esc((c.handover || {}).code || "") + '"></label></div>' +
+      '<h3>Farm (optional; Sunday: count by pen)</h3><div class="grid2"><label>Pigs counted<input id="f-count" type="number" min="0" inputmode="numeric"></label><label>Born<input id="f-born" type="number" min="0" inputmode="numeric"></label><label>Died<input id="f-died" type="number" min="0" inputmode="numeric"></label><label>Feed bags used<input id="f-bags" type="number" min="0" step="0.5" inputmode="decimal"></label></div>' +
+      '<label>Any sick or dead pig? Say which and what you saw<input id="f-sick" placeholder="Leave empty if none"></label>' +
+      '<p class="err" id="c-err"></p><button class="btn primary">Close the day</button></form></div>' + closedDaysPanel();
+  }
+  function readCloseDraft(day) {
+    var d = { closingKg: $("#c-kg").value === "" ? null : P.r3($("#c-kg").value), cashCounted: $("#c-cash").value === "" ? null : Math.round(+$("#c-cash").value), weighed: $("#c-weighed").checked, reasons: {}, handover: { amount: Math.round(+$("#h-amt").value || 0), method: $("#h-how").value, code: P.normCode($("#h-code").value) } };
+    ["cash", "stock", "salary"].forEach(function (k) { var el = $("#why-" + k); if (el) d.reasons[k] = el.value.trim(); else if (day._draft && day._draft.reasons) d.reasons[k] = day._draft.reasons[k] || ""; });
+    return d;
+  }
+  var drafts = {};
+  function submitClose(e) {
+    e.preventDefault();
+    var day = openDay(), err = $("#c-err"), s = settings(), d = readCloseDraft(day); drafts[day.date] = d;
+    if (d.closingKg == null) return (err.textContent = "Weigh the closing stock and enter the kg.");
+    if (!d.weighed) return (err.textContent = "The closing stock must be weighed, not estimated. Tick the box once weighed.");
+    if (d.cashCounted == null) return (err.textContent = "Count the cash in the drawer.");
+    var probe = Object.assign({}, day, { closingKg: d.closingKg, cashCounted: d.cashCounted }), t = totalsFor(probe), ch = P.closeChecks(probe, t, s);
+    var missing = ch.needReason.filter(function (n) { var el = $("#why-" + n.key); return !(el && el.value.trim()); });
+    if (missing.length) { day._draft = d; renderView(); $("#c-err").textContent = "Fill in the reasons above, then close."; return; }
+    if (d.handover.method === "Sent to Christabel by M-Pesa" && d.handover.amount > 0 && !P.validCode(d.handover.code)) return (err.textContent = "Enter the M-Pesa code for the money sent to Christabel.");
+    var n = now(), farm = { counted: $("#f-count").value, born: $("#f-born").value, died: $("#f-died").value, feedBags: $("#f-bags").value, sick: $("#f-sick").value.trim() };
+    var closed = Object.assign({}, day, { status: "closed", closingKg: d.closingKg, weighed: true, cashCounted: d.cashCounted, reasons: d.reasons, handover: d.handover, farm: farm, closedBy: S.who.name, closedAt: n.iso, closedTime: n.time });
+    delete closed._draft;
+    var tt = totalsFor(closed);
+    closed.totals = { soldKg: tt.soldKg, porkKes: tt.porkKes, foodKes: tt.foodKes, expensesKes: tt.expensesKes, net: tt.net, till: tt.till, mpesa: tt.mpesa, cashNet: tt.cashNet, recorded: tt.recorded, cashGap: tt.cashGap, stockGap: tt.stockGap, farmKg: tt.farmKg, boughtKg: tt.boughtKg, boughtKes: tt.boughtKes, farmCostsKes: tt.farmCostsKes, wasteKg: tt.wasteKg, ugaliKg: tt.ugaliKg, ugaliKes: tt.ugaliKes, roundingDiff: tt.roundingDiff, saleCount: tt.saleCount, salary: tt.salary };
+    closed.report = P.reportText(closed, tt, forDate("expenses", day.date), forDate("meatin", day.date));
+    write("days", day.date, closed);
+    audit("Day closed", day.date, "money gap " + tt.cashGap + "; stock gap " + tt.stockGap + (farm.sick ? "; SICK/DEAD PIG: " + farm.sick : ""));
+    delete drafts[day.date];
+    showReport(closed); S.tab = "close"; renderAll();
+  }
+  function showReport(day) {
+    var txt = day.report;
+    sheet('<div class="panel"><h3>Daily report · ' + esc(P.prettyDate(day.date)) + "</h3>" + (day.farm && day.farm.sick ? '<div class="banner bad">Sick or dead pig reported. Call Dr. Muthomi now.</div>' : "") + '<div class="receipt">' + esc(txt) + '</div><div class="row"><button class="btn" data-act="copy-report" data-id="' + esc(day.date) + '">Copy</button><a class="btn dark" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(txt) + '">Share to WhatsApp</a></div><p class="small muted">WhatsApp opens with the report ready; choose Christabel and press Send.</p><button class="btn primary" data-act="close-sheet">Done</button></div>');
+    S.reportText = txt;
+  }
+  function closedDaysPanel() {
+    var list = all("days").filter(function (d) { return d.status === "closed"; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 7);
+    if (!list.length) return "";
+    return '<section class="panel"><h3>Recently closed</h3><div class="scroll"><table><tbody>' + list.map(function (d) { return "<tr><td>" + esc(P.prettyDate(d.date)) + "</td><td>" + esc(d.closedBy) + " " + esc(d.closedTime) + '</td><td><button class="btn small" data-act="report" data-id="' + esc(d.id) + '">Report</button> <button class="btn small" data-act="reopen" data-id="' + esc(d.id) + '">Reopen</button></td></tr>'; }).join("") + "</tbody></table></div></section>";
+  }
+  function reopen(id) {
+    var d = one("days", id); if (openDay()) return alertSheet("Close the open day first. Only one day can be open.");
+    approve("manager", "Reopening " + P.prettyDate(id) + ". Christabel sees this in the audit log.", function (by) {
+      sheet('<form class="panel" id="f-re"><h3>Reopen ' + esc(P.prettyDate(id)) + '</h3><label>Reason<input id="re-why" required></label><p class="err" id="re-err"></p><div class="row"><button class="btn primary">Reopen</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
+      $("#f-re").addEventListener("submit", function (e) {
+        e.preventDefault(); var why = $("#re-why").value.trim(); if (!why) return ($("#re-err").textContent = "Say why.");
+        var x = Object.assign({}, d, { status: "open", reopened: (d.reopened || []).concat([{ by: by.name, reason: why, at: now().iso }]) }); delete x.totals; delete x.report;
+        write("days", id, x); audit("Day reopened", id, "by " + by.name + ": " + why); closeSheet(); S.tab = "close"; renderAll();
+      });
+    });
+  }
+
+  // ------------------------------------------------------------------ reports (owner / manager)
+  function viewOwner() {
+    var days = all("days").sort(function (a, b) { return a.date < b.date ? 1 : -1; }), today = now().date;
+    var closed = days.filter(function (d) { return d.status === "closed"; }).map(function (d) { return d.date; });
+    var first = days.length ? days[days.length - 1].date : null, missing = P.missingDays(days.map(function (d) { return d.date; }), first, today);
+    var od = openDay(), sick = days.filter(function (d) { return d.farm && d.farm.sick; }).slice(0, 3);
+    var out = msgHtml();
+    if (missing.length) out += '<div class="banner bad">Days with no record in the POS: ' + missing.map(P.prettyDate).join(", ") + ".</div>";
+    if (od && od.date < today) out += '<div class="banner warn">' + esc(P.prettyDate(od.date)) + " is still open. Close it before opening today.</div>";
+    sick.forEach(function (d) { out += '<div class="banner bad">' + esc(P.prettyDate(d.date)) + ": sick or dead pig reported: " + esc(d.farm.sick) + ". Call Dr. Muthomi.</div>"; });
+    out += '<div class="banner info">Before the POS: the WhatsApp reports for 11 Oct and 17 Oct 2026 were never received (handoff log).</div>';
+    var rows = days.slice(0, 31).map(function (d) {
+      var t = d.status === "closed" && d.totals ? d.totals : totalsFor(d);
+      var seq = P.seqProblems(forDate("sales", d.date).map(function (s) { return s.seq; }));
+      return "<tr><td>" + esc(P.prettyDate(d.date)) + (d.offer ? ' <span class="pill">offer</span>' : "") + "</td><td>" + (d.status === "closed" ? '<span class="pill ok">closed</span>' : '<span class="pill warn">open</span>') + (d.reopened ? ' <span class="pill warn">reopened</span>' : "") + (seq.gaps.length || seq.dups.length ? ' <span class="pill bad">receipt numbers</span>' : "") +
+        '</td><td class="n">' + KG(t.soldKg) + '</td><td class="n">' + K(t.porkKes + t.foodKes) + '</td><td class="n">' + K(t.expensesKes) + '</td><td class="n">' + K(t.net) + '</td><td class="n">' + (t.cashGap == null ? "–" : K(t.cashGap)) + '</td><td class="n">' + (t.stockGap == null ? "–" : KG(t.stockGap)) + '</td><td class="n">' + KG(t.farmKg) + '</td><td class="n">' + KG(t.boughtKg) + (t.boughtKes ? " / " + K(t.boughtKes) : "") + '</td><td class="n">' + K(t.farmCostsKes) + '</td><td><button class="btn small" data-act="recon" data-id="' + esc(d.date) + '">Check till</button></td></tr>';
+    }).join("");
+    var sumBy = function (key) {
+      var g = {}; days.filter(function (d) { return d.status === "closed" && d.totals; }).forEach(function (d) {
+        var k = key === "month" ? d.date.slice(0, 7) : isoWeek(d.date); var x = g[k] || (g[k] = { days: 0, kg: 0, kes: 0, exp: 0, net: 0 });
+        x.days++; x.kg += d.totals.soldKg; x.kes += d.totals.porkKes + d.totals.foodKes; x.exp += d.totals.expensesKes; x.net += d.totals.net;
+      });
+      return Object.keys(g).sort().reverse().slice(0, 8).map(function (k) { var x = g[k]; return "<tr><td>" + k + '</td><td class="n">' + x.days + '</td><td class="n">' + KG(x.kg) + '</td><td class="n">' + K(x.kes) + '</td><td class="n">' + K(x.exp) + '</td><td class="n">' + K(x.net) + "</td></tr>"; }).join("");
+    };
+    var cl = days.filter(function (d) { return d.status === "closed" && d.totals; }), on = cl.filter(function (d) { return d.offer; }), off = cl.filter(function (d) { return !d.offer; });
+    var avg = function (l, f) { return l.length ? l.reduce(function (a, d) { return a + f(d); }, 0) / l.length : null; };
+    var ug = '<table><thead><tr><th></th><th class="n">Days</th><th class="n">Pork ugali kg / day</th><th class="n">Takings / day</th></tr></thead><tbody>' +
+      [["Offer days", on], ["Other days", off]].map(function (r) { return "<tr><td>" + r[0] + '</td><td class="n">' + r[1].length + '</td><td class="n">' + (r[1].length ? KG(avg(r[1], function (d) { return d.totals.ugaliKg; })) : "–") + '</td><td class="n">' + (r[1].length ? K(avg(r[1], function (d) { return d.totals.porkKes + d.totals.foodKes; })) : "–") + "</td></tr>"; }).join("") + "</tbody></table>";
+    var glance = od ? (function () { var t = totalsFor(od); return '<dl class="kv"><dt>Today so far</dt><dd>' + KG(t.soldKg) + " kg · KES " + K(t.takings) + "</dd><dt>Sales</dt><dd>" + t.saleCount + "</dd><dt>Stock left</dt><dd>" + KG(t.stockLeft) + " kg</dd><dt>Expenses</dt><dd>KES " + K(t.expensesKes) + "</dd></dl>"; })() : '<p class="muted">No day open.</p>';
+    var last = days.filter(function (d) { return d.status === "closed"; })[0];
+    return out + '<div class="grid2"><section class="panel"><h2>At a glance</h2>' + glance + (last ? '<p class="small">Last closed: ' + esc(P.prettyDate(last.date)) + ' · <button class="btn small" data-act="report" data-id="' + esc(last.date) + '">Report</button></p>' : "") + "</section>" +
+      '<section class="panel"><h2>Pork ugali offer</h2>' + ug + '<p class="small muted">Shows whether the offer lifts slow days. Fills in as days are closed.</p></section></div>' +
+      '<section class="panel"><div class="row" style="justify-content:space-between"><h2>Days</h2>' + '<div class="row"><button class="btn small" data-act="csv-days">Export days (CSV)</button><button class="btn small" data-act="csv-sales">Export sales lines (CSV)</button></div>' + '</div><div class="scroll"><table><thead><tr><th>Date</th><th>Status</th><th class="n">Kg sold</th><th class="n">Takings</th><th class="n">Expenses</th><th class="n">Net</th><th class="n">Money gap</th><th class="n">Stock gap kg</th><th class="n">Farm kg</th><th class="n">Bought kg / KES</th><th class="n">Farm costs</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="12" class="muted">No days yet. The first day appears when Kangai or the manager opens the counter.</td></tr>') + "</tbody></table></div></section>" +
+      '<div class="grid2"><section class="panel"><h3>By week</h3><div class="scroll"><table><thead><tr><th>Week</th><th class="n">Days</th><th class="n">Kg</th><th class="n">Takings</th><th class="n">Expenses</th><th class="n">Net</th></tr></thead><tbody>' + sumBy("week") + '</tbody></table></div></section><section class="panel"><h3>By month</h3><div class="scroll"><table><thead><tr><th>Month</th><th class="n">Days</th><th class="n">Kg</th><th class="n">Takings</th><th class="n">Expenses</th><th class="n">Net</th></tr></thead><tbody>' + sumBy("month") + "</tbody></table></div></section></div>" +
+      '<section class="panel"><h2>Find a receipt</h2><label>Receipt number, M-Pesa or till code, amount, or date (2026-10-19)<input id="find" placeholder="e.g. 0007 or UJFEUAQL0V or 350"></label><div id="found"></div></section>' +
+      '<section class="panel"><h2>Audit log</h2><div class="scroll"><table><thead><tr><th>When</th><th>Who</th><th>What</th><th>Detail</th></tr></thead><tbody>' +
+      all("audit").sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 100).map(function (a) { return "<tr><td class=small>" + esc(a.date + " " + a.time) + "</td><td>" + esc(a.by) + "</td><td>" + esc(a.action) + " " + esc(a.target) + '</td><td class="small">' + esc(a.detail) + "</td></tr>"; }).join("") + "</tbody></table></div></section>";
+  }
+  function isoWeek(iso) { var d = new Date(iso + "T12:00:00Z"); var day = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - day + 3); var y = d.getUTCFullYear(), jan4 = new Date(Date.UTC(y, 0, 4)); var w = 1 + Math.round(((d - jan4) / 864e5 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7); return y + "-W" + String(w).padStart(2, "0"); }
+  function findReceipts(q) {
+    q = q.trim().toUpperCase(); if (!q) return "";
+    var hits = all("sales").filter(function (s) { return s.receiptNo.indexOf(q) >= 0 || s.date === q.toLowerCase() || String(s.total) === q || (s.payments || []).some(function (p) { return (p.code || "") === q || String(p.amount) === q; }); }).slice(0, 30);
+    return hits.length ? "<table><tbody>" + hits.map(function (s) { return "<tr><td>" + esc(s.receiptNo) + (s.void ? ' <span class="pill bad">void</span>' : "") + "</td><td>" + esc(s.date + " " + s.time) + '</td><td class="n">' + K(s.total) + '</td><td><button class="btn small" data-act="show-receipt" data-id="' + esc(s.id) + '" data-copy="1">Show</button></td></tr>'; }).join("") + "</tbody></table>" : '<p class="muted">Nothing found.</p>';
+  }
+  function reconSheet(date) {
+    var r = one("recon", date) || {}, sales = P.live(forDate("sales", date));
+    var mine = [], mp = [];
+    sales.forEach(function (s) { (s.payments || []).forEach(function (p) { if (p.type === "Till") mine.push({ code: p.code, amount: p.amount, rc: s.receiptNo }); if (p.type === "M-Pesa") mp.push({ code: p.code, amount: p.amount, rc: s.receiptNo }); }); });
+    function cmp(pos, ext, label) {
+      if (!ext) return '<p class="muted small">' + label + ": not read yet. The nightly update fills this in.</p>";
+      var e = {}; ext.forEach(function (x) { e[x.code] = x; }); var p = {}; pos.forEach(function (x) { p[x.code] = x; });
+      var matched = pos.filter(function (x) { return e[x.code] && e[x.code].amount === x.amount; }), wrongAmt = pos.filter(function (x) { return e[x.code] && e[x.code].amount !== x.amount; });
+      var notExt = pos.filter(function (x) { return !e[x.code]; }), notPos = ext.filter(function (x) { return !p[x.code]; });
+      return "<h3>" + label + '</h3><p><span class="pill ok">' + matched.length + " matched</span> " + (wrongAmt.length ? '<span class="pill bad">' + wrongAmt.length + " amount differs</span> " : "") + '<span class="pill ' + (notExt.length ? "bad" : "ok") + '">' + notExt.length + ' in POS, missing from statement</span> <span class="pill ' + (notPos.length ? "bad" : "ok") + '">' + notPos.length + " on statement, missing from POS</span></p>" +
+        (notExt.concat(wrongAmt).length ? '<p class="small">In POS only or different: ' + notExt.concat(wrongAmt).map(function (x) { return esc(x.code + " " + x.amount + " (" + x.rc + ")"); }).join(", ") + "</p>" : "") +
+        (notPos.length ? '<p class="small">On statement only: ' + notPos.map(function (x) { return esc(x.code + " " + x.amount); }).join(", ") + "</p>" : "");
+    }
+    sheet('<div class="panel"><h3>Till check · ' + esc(P.prettyDate(date)) + '</h3><p class="small muted">POS till total KES ' + K(mine.reduce(function (a, x) { return a + x.amount; }, 0)) + (r.kopoTotal != null ? " · Kopo Kopo till 3014485 KES " + K(r.kopoTotal) : "") + "</p>" +
+      cmp(mine, r.kopo, "Kopo Kopo till 3014485") + cmp(mp, r.mpesa, "M-Pesa (Doris's forwarded SMS)") + '<button class="btn primary" data-act="close-sheet">Done</button></div>');
+  }
+
+  // ------------------------------------------------------------------ settings (owner)
+  function viewSettings() {
+    var s = settings(), us = all("users").sort(function (a, b) { return (a.order || 9) - (b.order || 9); }), pl = pigs(), pigDoc = one("config", "pigs");
+    return msgHtml() + '<form class="panel" id="f-prices"><h2>Prices (KES)</h2><p class="small muted">Price list confirmed 19 Oct 2026. Every change is logged with the old and new price.</p><div class="grid2">' +
+      [["porkugali", "Pork ugali, per 100 g"], ["fresh", "Fresh pork, per kg"], ["premium", "Premium cuts, per kg"], ["cooked", "Cooked pork, per kg (raw)"], ["platter", "Pork platter (1 kg raw)"]].map(function (p) { return "<label>" + p[1] + '<input type="number" step="1" min="1" id="p-' + p[0] + '" value="' + s.prices[p[0]] + '"></label>'; }).join("") +
+      '</div><div class="scroll"><table><thead><tr><th>Side</th>' + P.PORTIONS.map(function (p) { return '<th class="n">' + P.PORTION_LABEL[p] + "</th>"; }).join("") + "</tr></thead><tbody>" +
+      P.SIDES.map(function (k) { return "<tr><td>" + P.ITEMS[k].name + "</td>" + P.PORTIONS.map(function (p) { return '<td class="n"><input style="min-width:70px" type="number" step="1" min="0" id="sp-' + k + "-" + p + '" value="' + s.sidePrices[k][p] + '"></td>'; }).join("") + "</tr>"; }).join("") +
+      '</tbody></table></div><button class="btn primary">Save prices</button></form>' +
+      '<form class="panel" id="f-rules"><h2>Rules</h2><div class="grid2"><label>Rounding of pork amounts<select id="r-round"><option value="nearest1">Nearest KES 1 (until decided)</option><option value="down10">Down to KES 10</option><option value="nearest10">Nearest KES 10</option></select></label>' +
+      '<label>Money gap that needs a reason (KES)<input id="r-cash" type="number" min="0" value="' + s.cashGapLimit + '"></label><label>Stock gap that needs a reason (kg)<input id="r-stock" type="number" step="0.01" min="0" value="' + s.stockGapLimit + '"></label>' +
+      '<label>Receipt width<select id="r-width"><option value="32">58 mm paper (32 characters)</option><option value="48">80 mm paper (48 characters)</option></select></label></div>' +
+      '<label class="check"><input type="checkbox" id="r-sides" ' + (s.sidesWithoutPork ? "checked" : "") + "> Sell sides without pork (off since 19 Oct 2026; stand-alone prices not decided, so this stays off until they are)</label>" +
+      '<fieldset class="panel"><legend class="section-label">Waste disposal methods the shop uses</legend>' + ["Pit", "Burn", "Bin collection"].map(function (x) { return '<label class="check"><input type="checkbox" data-disp="' + x + '" ' + (s.disposal.indexOf(x) >= 0 ? "checked" : "") + "> " + x + "</label>"; }).join("") + '<p class="small muted">Feeding to pigs is never an option.</p></fieldset>' +
+      '<button class="btn primary">Save rules</button></form>' +
+      '<section class="panel"><h2>Staff and PINs</h2><div class="scroll"><table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>' + us.map(function (u) { return "<tr><td>" + esc(u.name) + "</td><td>" + esc(u.role) + "</td><td>" + (u.pinHash ? '<span class="pill ok">set</span>' : '<span class="pill warn">not set</span>') + '</td><td><button class="btn small" data-act="set-pin" data-id="' + esc(u.id) + '">' + (u.pinHash ? "Reset PIN" : "Set PIN") + '</button> <button class="btn small" data-act="toggle-user" data-id="' + esc(u.id) + '">' + (u.active === false ? "Turn on" : "Turn off") + "</button></td></tr>"; }).join("") + "</tbody></table></div>" +
+      '<form class="row" id="f-adduser"><label style="flex:2 1 160px">New staff name<input id="u-name"></label><label style="flex:1 1 120px">Role<select id="u-role"><option value="cashier">Cashier</option><option value="manager">Manager</option></select></label><button class="btn">Add</button></form>' +
+      '<p class="small muted">PINs say who is at the counter. They are short codes, not bank-grade security; keep the phone itself locked.</p></section>' +
+      '<section class="panel"><h2>Pigs available for Meat in</h2><p class="small">' + (pl.length ? esc(pl.filter(function (p) { return p.role !== "Hired boar"; }).map(function (p) { return p.tag; }).join(", ")) : "None loaded yet.") + '</p><p class="small muted">Copied from Bellas Farm Office' + (pigDoc && pigDoc.copiedAt ? " on " + esc(pigDoc.copiedAt) : "") + ". Farm Office stays the record for every pig; the nightly update refreshes this list and marks slaughtered pigs there.</p></section>" +
+      '<section class="panel"><h2>This phone</h2><dl class="kv"><dt>Google Sheet</dt><dd>' + (S.conn ? "connected" : "not connected") + '</dd><dt>Last synced</dt><dd>' + esc(S.lastSync ? new Date(S.lastSync).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" }) : "never") + '</dd><dt>Waiting to send</dt><dd>' + S.queue.length + '</dd></dl>' +
+      (S.conn ? '<label>Setup link for another phone (send it on WhatsApp; anyone with it can add records)<input id="setup-link" readonly value="' + esc(location.origin + location.pathname + "#setup=" + encodeURIComponent(S.conn.url + "|" + S.conn.key)) + '"></label><div class="row"><button class="btn" data-act="copy-setup">Copy setup link</button><button class="btn" data-act="disconnect">Disconnect this phone</button></div>' : "") + "</section>";
+  }
+  function savePrices(e) {
+    e.preventDefault(); var s = settings(), cur = Object.assign({}, one("config", "settings") || {}), changes = [];
+    var prices = {}; Object.keys(s.prices).forEach(function (k) { var v = Math.round(+$("#p-" + k).value); prices[k] = v; if (v !== s.prices[k]) changes.push(k + " " + s.prices[k] + " → " + v); });
+    var sp = {}; P.SIDES.forEach(function (k) { sp[k] = {}; P.PORTIONS.forEach(function (p) { var v = Math.round(+$("#sp-" + k + "-" + p).value); sp[k][p] = v; if (v !== s.sidePrices[k][p]) changes.push(k + " " + p + " " + s.sidePrices[k][p] + " → " + v); }); });
+    if (!changes.length) { flash("No price changed.", "info"); renderView(); return; }
+    cur.prices = prices; cur.sidePrices = sp; cur.priceLog = (cur.priceLog || []).concat([{ at: now().iso, by: S.who.name, changes: changes }]);
+    write("config", "settings", cur); audit("Prices changed", "", changes.join("; ")); flash("Prices saved: " + changes.join("; "), "ok"); renderView();
+  }
+  function saveRules(e) {
+    e.preventDefault(); var cur = Object.assign({}, one("config", "settings") || {}), s = settings();
+    if ($("#r-sides").checked && !s.standalonePrices) { flash("Selling sides without pork needs stand-alone prices first. Tell Claude the prices and this is switched on.", "warn"); renderView(); return; }
+    cur.rounding = $("#r-round").value; cur.cashGapLimit = +$("#r-cash").value; cur.stockGapLimit = +$("#r-stock").value; cur.paperWidth = +$("#r-width").value; cur.sidesWithoutPork = $("#r-sides").checked;
+    cur.disposal = Array.prototype.filter.call(document.querySelectorAll("[data-disp]"), function (x) { return x.checked; }).map(function (x) { return x.getAttribute("data-disp"); });
+    if (!cur.disposal.length) { flash("Choose at least one disposal method.", "warn"); renderView(); return; }
+    write("config", "settings", cur); audit("Rules changed", "", JSON.stringify({ rounding: cur.rounding, cash: cur.cashGapLimit, stock: cur.stockGapLimit, disposal: cur.disposal, width: cur.paperWidth })); flash("Rules saved.", "ok"); renderView();
+  }
+
+  // ------------------------------------------------------------------ files
+  async function saveFile(name, text) {
+    try {
+      var a = document.createElement("a"), url = URL.createObjectURL(new Blob([text], { type: /\.csv$/.test(name) ? "text/csv" : "text/plain" }));
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 2000);
+    } catch (e) { alertSheet("The file was not saved on this phone."); }
+  }
+  function copy(text, btn) {
+    var done = function () { if (btn) { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); } };
+    try { navigator.clipboard.writeText(text).then(done, function () { selectFallback(); }); } catch (e) { selectFallback(); }
+    function selectFallback() { var el = $("#sheet .receipt"); if (!el) return; var r = document.createRange(); r.selectNodeContents(el); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); if (btn) btn.textContent = "Selected: copy it"; }
+  }
+  function csvDays() {
+    var rows = [["date", "status", "opening_kg", "meat_in_stock_kg", "farm_kg", "bought_kg", "bought_kes", "sold_kg", "pork_kes", "food_kes", "expenses_kes", "net_kes", "till_kes", "mpesa_kes", "cash_kes", "money_recorded_kes", "money_gap_kes", "closing_kg", "stock_gap_kg", "waste_kg", "farm_costs_kes", "pork_ugali_offer", "pork_ugali_kg", "pork_ugali_kes", "rounding_diff_kes", "sales", "closed_by"]];
+    all("days").sort(function (a, b) { return a.date < b.date ? -1 : 1; }).forEach(function (d) { var t = totalsFor(d); rows.push([d.date, d.status, d.openingKg, t.meatInStock, t.farmKg, t.boughtKg, t.boughtKes, t.soldKg, t.porkKes, t.foodKes, t.expensesKes, t.net, t.till, t.mpesa, t.cashNet, t.recorded, t.cashGap, d.closingKg, t.stockGap, t.wasteKg, t.farmCostsKes, d.offer ? "Y" : "N", t.ugaliKg, t.ugaliKes, t.roundingDiff, t.saleCount, d.closedBy || ""]); });
+    saveFile("bellas-pork-city-days.csv", P.csv(rows));
+  }
+  function csvSales() {
+    var rows = [["date", "time", "receipt", "void", "item", "kg", "qty", "portion", "unit_price", "computed_kes", "charged_kes", "payments", "codes", "served_by"]];
+    all("sales").sort(function (a, b) { return a.at < b.at ? -1 : 1; }).forEach(function (s) { (s.lines || []).forEach(function (l) { rows.push([s.date, s.time, s.receiptNo, s.void ? "Y" : "", l.name, l.kg, l.qty, l.portion || "", l.unitPrice, l.computed, l.charged, (s.payments || []).map(function (p) { return p.type + " " + p.amount; }).join(" + "), (s.payments || []).map(function (p) { return p.code || ""; }).join(" "), s.byName]); }); });
+    saveFile("bellas-pork-city-sales.csv", P.csv(rows));
+  }
+
+  // ------------------------------------------------------------------ events
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-tab]"); if (t && !t.closest("#sheet")) { S.tab = t.getAttribute("data-tab"); renderAll(); return; }
+    var a = e.target.closest("[data-act]"); if (!a) return;
+    var act = a.getAttribute("data-act"), id = a.getAttribute("data-id"), day = openDay();
+    switch (act) {
+      case "lock": audit("Signed out", S.who && S.who.name); S.who = null; ls(SKEY, null); S.cart = []; S.pay = []; renderAll(); break;
+      case "pick-user": signIn(one("users", id)); break;
+      case "seed-users":
+        [["u-christabel", "Christabel", "owner", 1], ["u-kangai", "Kangai", "cashier", 2], ["u-doris", "Mama Doris (Doris Nehemiah)", "manager", 3]].forEach(function (u) { if (!one("users", u[0])) write("users", u[0], { name: u[1], role: u[2], order: u[3], active: true }); });
+        audit("Staff list created", "", "Christabel (owner), Kangai (cashier), Mama Doris (manager)"); renderAll(); break;
+      case "close-sheet": closeSheet(); break;
+      case "add": readPayInputs(); readCustomer(); addItem(a.getAttribute("data-item"), day); break;
+      case "rm": readPayInputs(); readCustomer(); S.cart.splice(+a.getAttribute("data-i"), 1); renderView(); break;
+      case "clear": S.cart = []; S.pay = []; S.customer = {}; renderView(); break;
+      case "addpay": readPayInputs(); readCustomer(); var ct = P.cartTotals(S.cart), paid = S.pay.reduce(function (x, p) { return x + Math.round(+p.amount || 0); }, 0); S.pay.push({ type: a.getAttribute("data-t"), amount: Math.max(0, ct.total - paid) || "", code: "" }); renderView(); break;
+      case "rmpay": readPayInputs(); S.pay.splice(+a.getAttribute("data-i"), 1); renderView(); break;
+      case "complete": completeSale(day); break;
+      case "show-receipt": var s = one("sales", id); showReceipt(s, true, false); break;
+      case "void": voidSale(id); break;
+      case "copy-receipt": copy(S.receiptText, a); break;
+      case "save-receipt": saveFile(S.receiptFile, S.receiptText); break;
+      case "copy-setup": var el = $("#setup-link"); try { navigator.clipboard.writeText(el.value).then(function () { a.textContent = "Copied"; }, function () { el.select(); }); } catch (e) { el.select(); } break;
+      case "print-receipt": var pa = $("#print-area"); pa.textContent = S.receiptText; pa.className = "w" + (settings().paperWidth || 32); window.print(); break;
+      case "connect": var cu = $("#cn-url").value.trim(), ck = $("#cn-key").value.trim();
+        if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(cu)) { $("#cn-err").textContent = "That is not a Google Apps Script web app address (it ends in /exec)."; break; }
+        if (ck.length < 16) { $("#cn-err").textContent = "Enter the shop key from the setup message."; break; }
+        S.conn = { url: cu, key: ck }; ls(CONN_KEY, S.conn); S.ready = false; renderAll(); pull(); flush(); break;
+      case "disconnect": approve("owner", "Disconnecting this phone from the Google Sheet. Records not yet sent stay on the phone.", function () { S.conn = null; ls(CONN_KEY, null); S.lastPullTime = null; renderAll(); }); break;
+      case "copy-report": copy(S.reportText, a); break;
+      case "report": var d = one("days", id); if (d.report) showReport(d); else alertSheet("This day has no report yet. It is made when the day is closed."); break;
+      case "reopen": reopen(id); break;
+      case "offer-on": closeSheet(); approve("manager", "Switching on the pork ugali offer for today.", function (by) { write("days", day.date, Object.assign({}, day, { offer: true, offerBy: by.name, offerAt: now().iso })); audit("Pork ugali offer on", day.date, "by " + by.name); renderAll(); }); break;
+      case "void-exp": approve("manager", "Voiding an expense.", function () { voidExp(id); }); break;
+      case "check-close": day._draft = readCloseDraft(day); drafts[day.date] = day._draft; renderView(); break;
+      case "recon": reconSheet(id); break;
+      case "csv-days": csvDays(); break;
+      case "csv-sales": csvSales(); break;
+      case "set-pin": setPinFlow(one("users", id), false); break;
+      case "toggle-user": var u = one("users", id); write("users", id, Object.assign({}, u, { active: u.active === false })); audit(u.active === false ? "Staff turned on" : "Staff turned off", u.name); renderView(); break;
+    }
+  });
+  document.addEventListener("change", function (e) {
+    if (e.target.id === "offer-toggle") {
+      var day = openDay(), on = e.target.checked;
+      write("days", day.date, Object.assign({}, day, { offer: on, offerBy: S.who.name, offerAt: now().iso })); audit("Pork ugali offer " + (on ? "on" : "off"), day.date); renderAll();
+    }
+    if (e.target.id === "x-cat" || e.target.id === "x-pigfarm") expCatChange();
+    if (e.target.id === "m-sup") $("#m-sup-new-l").hidden = e.target.value !== "__new";
+    if (e.target.id === "m-live" || e.target.id === "m-carc") { var dr = P.dressing(+$("#m-live").value, +$("#m-carc").value); $("#m-dress").textContent = dr ? "Dressing " + dr + "% (carcass ÷ live)." : ""; }
+  });
+  document.addEventListener("input", function (e) { if (e.target.id === "find") $("#found").innerHTML = findReceipts(e.target.value); if (e.target.id === "o-kg") { var prev = lastClosed(); $("#o-why-l").hidden = !(prev && Math.abs(+e.target.value - prev.closingKg) > settings().openingDiffLimit); } });
+  document.addEventListener("submit", function (e) {
+    var id = e.target.id;
+    if (id === "f-open") submitOpen(e); else if (id === "f-meat") submitMeat(e); else if (id === "f-waste") submitWaste(e);
+    else if (id === "f-exp") submitExp(e); else if (id === "f-close") submitClose(e); else if (id === "f-prices") savePrices(e); else if (id === "f-rules") saveRules(e);
+    else if (id === "f-adduser") { e.preventDefault(); var n = $("#u-name").value.trim(); if (!n) return; var uidv = "u-" + n.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 20) + "-" + uid().slice(-4); write("users", uidv, { name: n, role: $("#u-role").value, order: 5, active: true }); audit("Staff added", n, $("#u-role").value); renderView(); }
+  });
+  // meat-in source toggle + settings select values after render
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-src]"); if (!b) return;
+    var farm = b.getAttribute("data-src") === "farm"; $("#m-farm").hidden = !farm; $("#m-bought").hidden = farm;
+    document.querySelectorAll("[data-src]").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
+  });
+  var _rv = renderView;
+  renderView = function () {
+    var day = openDay(); if (day && drafts[day.date]) day._draft = drafts[day.date];
+    if ($("[data-pay]")) readPayInputs();
+    if ($("#c-name")) readCustomer();
+    if (day && $("#c-kg")) { drafts[day.date] = readCloseDraft(day); day._draft = drafts[day.date]; }
+    dirty = false; pendingRender = false;
+    _rv();
+    var s = settings();
+    if ($("#r-round")) $("#r-round").value = s.rounding;
+    if ($("#r-width")) $("#r-width").value = String(s.paperWidth || 32);
+    if ($("#x-cat")) expCatChange();
+    if (day && day._draft && $("#h-how")) $("#h-how").value = day._draft.handover.method;
+  };
+  // openDay() returns a fresh object each call, so close-day drafts live in `drafts`
+  var _openDay = openDay;
+  openDay = function () { var d = _openDay(); if (d && drafts[d.date]) d._draft = drafts[d.date]; return d; };
+})();
+
+</script>
+</body></html>
