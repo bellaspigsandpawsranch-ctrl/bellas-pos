@@ -629,7 +629,7 @@ td.n,th.n{text-align:right}
       html.push('<span class="chip ok">Day open · ' + esc(P.prettyDate(day.date)) + "</span>");
       html.push('<span class="chip ' + (t.stockLeft < 1 ? "bad" : "") + '">Stock ' + KG(t.stockLeft) + " kg</span>");
       html.push('<span class="chip">KES ' + K(t.takings) + " · " + KG(t.soldKg) + " kg sold</span>");
-    } else if (S.ready) html.push('<span class="chip warn">No day open</span>');
+    } else if (S.ready && S.conn) html.push('<span class="chip warn">No day open</span>');
     if (S.who) html.push('<span class="chip">' + esc(S.who.name) + " · " + esc(S.who.role) + "</span>");
     st.innerHTML = html.join("");
     var b = [];
