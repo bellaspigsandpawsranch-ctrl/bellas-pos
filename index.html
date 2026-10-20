@@ -558,6 +558,19 @@ td.n,th.n{text-align:right}
   }
   window.addEventListener("online", function () { flush(); pull(); });
   setInterval(function () { flush(); }, 20000);
+  // ------------------------------------------------------------------ moving to the new address (Oct 2026)
+  // Runs ONLY on the old GitHub Pages address. It first sends every record still waiting on this phone to the
+  // Sheet, then opens the new address already connected (same setup-link format), so nothing is lost or re-typed.
+  (function moveHome() {
+    var NEW_HOME = "__NEW_HOME__";
+    if (location.hostname !== "bellaspigsandpawsranch-ctrl.github.io" || NEW_HOME.indexOf("https://") !== 0) return;
+    function go() {
+      if (S.queue.length) { if (S.conn) flush(); return setTimeout(go, 5000); } // never leave unsent records behind
+      if (S.flushing) return setTimeout(go, 2000);
+      location.replace(NEW_HOME + (S.conn ? "#setup=" + encodeURIComponent(S.conn.url + "|" + S.conn.key) : ""));
+    }
+    setTimeout(go, 2000);
+  })();
 
   function saveCache() {
     try {

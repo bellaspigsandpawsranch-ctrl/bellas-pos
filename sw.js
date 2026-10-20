@@ -1,6 +1,6 @@
 // Bellas Pork City POS: keeps the counter app on the phone so it opens with no signal.
 // The Google Sheet (script.google.com) is never cached: records always go to the live Sheet.
-var CACHE = "bpc-pos-v1";
+var CACHE = "bpc-pos-v2";
 var APP = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 self.addEventListener("install", function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(APP); }).then(function () { return self.skipWaiting(); }));
