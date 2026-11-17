@@ -457,7 +457,7 @@ td.n,th.n{text-align:right}
   // Money flow: buyers pay the farm manager (cash or his/her M-Pesa); the manager pays farm costs from it
   // and sends the balance to Christabel. Reconcile: cash counted vs expected, M-Pesa codes vs statement,
   // money sent to Christabel, float received vs spent. No prices are set here: staff enter what was charged.
-  var FARM_SALE_ITEMS = ["Live pig (for meat)", "Weaner / piglet", "Breeding stock", "Manure", "Crops / produce", "Other"];
+  var FARM_SALE_ITEMS = ["Live pig (for meat)", "Weaner / piglet", "Breeding stock", "Carcass (culled pig)", "Manure", "Crops / produce", "Other"];
   var FARM_EXP_CATS = ["Pig feed", "Feed ingredients (maize, pollard, peas)", "Vet & medicine", "Casual labour", "Transport", "Fuel",
     "Water & electricity", "Repairs & maintenance", "Equipment & tools", "Disinfectant & biosecurity", "Breeding (boar hire / AI)",
     "Phone & airtime", "Other"];
@@ -581,7 +581,61 @@ td.n,th.n{text-align:right}
     return lines.join("\n");
   }
 
+  // ================================================================== CULLED PIGS (Christabel, 18 Nov 2026)
+  // A cull goes to Pork City, is sold live, is slaughtered and the carcass sold, or is slaughtered for home use.
+  // The farm manager records live weight when culled and carcass weight after slaughter.
+  // Sick pigs are never culled for meat: call Dr. Muthomi. Every cull for meat needs the withdrawal period over.
+  var CULL_DEST = ["Pork City butchery", "Sold live to a buyer", "Slaughtered, carcass sold", "Home use"];
+  var CULL_REASONS = ["Old sow / poor litters", "Not getting pregnant", "Lame / leg problem", "Slow grower / runt", "Injury", "Hernia",
+    "Bad temperament", "Too many boars", "Other"];
+  var CULL_TYPES = ["Sow", "Gilt", "Boar", "Finisher", "Grower", "Weaner"];
+  function cullSlaughtered(dest) { return dest !== "Sold live to a buyer"; }
+  function cullNeedsInspection(dest) { return dest === "Pork City butchery" || dest === "Slaughtered, carcass sold"; }
+  function cullSold(dest) { return dest === "Sold live to a buyer" || dest === "Slaughtered, carcass sold"; }
+  function checkCull(c) {
+    var e = [];
+    if (!String(c.tag || "").trim() && !String(c.untagged || "").trim()) e.push("Choose the pig's ear tag, or describe an untagged pig.");
+    if (CULL_TYPES.indexOf(c.type) < 0) e.push("Choose what kind of pig it is.");
+    if (CULL_REASONS.indexOf(c.reason) < 0) e.push("Choose why the pig is culled.");
+    if (c.reason === "Other" && !String(c.note || "").trim()) e.push("Write the reason in the note.");
+    if (!(+c.liveKg > 0)) e.push("Weigh the pig and enter the live weight (kg).");
+    if (CULL_DEST.indexOf(c.dest) < 0) e.push("Choose where the pig goes.");
+    if (!c.notSick) e.push("Blocked: a sick pig is never culled for meat or sold. Call Dr. Muthomi.");
+    if (!c.withdrawalOk) e.push("Blocked: the medicine withdrawal period must be over (or no medicine given).");
+    return { ok: !e.length, errors: e };
+  }
+  // after slaughter: carcass weight (and inspection when the meat is sold)
+  function checkCarcass(c, s) {
+    var e = [];
+    if (!(+s.carcassKg > 0)) e.push("Weigh the carcass and enter the kg.");
+    else if (+s.carcassKg >= +c.liveKg) e.push("Carcass weight must be less than the live weight (" + c.liveKg + " kg).");
+    if (!s.slaughterDate) e.push("Enter the slaughter date.");
+    if (cullNeedsInspection(c.dest) && !(s.inspected && String(s.inspector || "").trim())) e.push("Blocked: meat inspection must be done, with the inspector's name, before the meat is sold.");
+    var d = dressing(+c.liveKg, +s.carcassKg);
+    if (d != null && (d < 55 || d > 85) && !s.dressingConfirmed) e.push("Dressing is " + d + "% (usually 65–80%). Check both weights, then tick that they are right.");
+    return { ok: !e.length, errors: e, dressing: d };
+  }
+  function cullStatus(c) {
+    if (c.void) return "Void";
+    if (cullSlaughtered(c.dest) && !(c.carcassKg > 0)) return "Waiting for carcass weight";
+    if (cullSold(c.dest) && !c.saleId) return "Waiting for sale";
+    if (c.dest === "Pork City butchery" && !c.meatInId) return "Waiting at Pork City";
+    return "Done";
+  }
+  function cullTotals(culls) {
+    var t = { count: 0, liveKg: 0, carcassKg: 0, weighed: 0, liveOfWeighed: 0, byDest: {} };
+    live(culls).forEach(function (c) {
+      t.count++; t.liveKg += +c.liveKg || 0; t.byDest[c.dest] = (t.byDest[c.dest] || 0) + 1;
+      if (c.carcassKg > 0) { t.weighed++; t.carcassKg += +c.carcassKg; t.liveOfWeighed += +c.liveKg; }
+    });
+    t.liveKg = r3(t.liveKg); t.carcassKg = r3(t.carcassKg);
+    t.dressing = t.liveOfWeighed ? Math.round(t.carcassKg / t.liveOfWeighed * 100) : null;
+    return t;
+  }
+
   var api = { ITEMS: ITEMS,
+    CULL_DEST: CULL_DEST, CULL_REASONS: CULL_REASONS, CULL_TYPES: CULL_TYPES, cullSlaughtered: cullSlaughtered, cullNeedsInspection: cullNeedsInspection,
+    cullSold: cullSold, checkCull: checkCull, checkCarcass: checkCarcass, cullStatus: cullStatus, cullTotals: cullTotals,
     FARM_SALE_ITEMS: FARM_SALE_ITEMS, FARM_EXP_CATS: FARM_EXP_CATS, FARM_PAY_IN: FARM_PAY_IN, FARM_PAY_OUT: FARM_PAY_OUT, FARM_MOVES: FARM_MOVES,
     farmPot: farmPot, needsCode: needsCode, checkFarmSale: checkFarmSale, checkFarmExpense: checkFarmExpense, checkFarmMove: checkFarmMove,
     farmEffect: farmEffect, farmBalance: farmBalance, farmDayTotals: farmDayTotals, farmCheckResult: farmCheckResult, farmReportText: farmReportText, SIDES: SIDES, PORTIONS: PORTIONS, PORTION_LABEL: PORTION_LABEL, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
@@ -602,8 +656,8 @@ td.n,th.n{text-align:right}
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var K = P.kes, KG = P.kg3;
-  var COLS = ["days", "sales", "expenses", "meatin", "waste", "users", "config", "audit", "recon", "farmsales", "farmexp", "farmmoney", "farmdays"];
-  var FARM_COLS = ["farmsales", "farmexp", "farmmoney", "farmdays"];
+  var COLS = ["days", "sales", "expenses", "meatin", "waste", "users", "config", "audit", "recon", "farmsales", "farmexp", "farmmoney", "farmdays", "farmculls"];
+  var FARM_COLS = ["farmsales", "farmexp", "farmmoney", "farmdays", "farmculls"];
   var QKEY = "bpc-queue-v1", SKEY = "bpc-session-v1", DKEY = "bpc-device-v1";
 
   // ------------------------------------------------------------------ local helpers
@@ -658,7 +712,7 @@ td.n,th.n{text-align:right}
   // The phone is the working copy: every record is saved on the phone first, then sent to the Sheet in
   // batches whenever there is signal. Every minute the phone pulls what other phones (e.g. Christabel's) changed.
   var CONN_KEY = "bpc-conn-v1", CKEY = "bpc-cache-v2", SYNC_KEY = "bpc-lastsync-v1";
-  var CACHED = ["days", "users", "config", "sales", "expenses", "meatin", "waste", "recon", "audit", "farmsales", "farmexp", "farmmoney", "farmdays"];
+  var CACHED = ["days", "users", "config", "sales", "expenses", "meatin", "waste", "recon", "audit", "farmsales", "farmexp", "farmmoney", "farmdays", "farmculls"];
   S.conn = ls(CONN_KEY); S.loaded = {}; S.lastSync = ls(SYNC_KEY) || null; S.lastPullOk = null;
   (function readSetupLink() {
     // setup link: https://<site>/#setup=<script url>|<shop key>  (sent once by Christabel)
@@ -787,10 +841,10 @@ td.n,th.n{text-align:right}
     if (!S.who) { tabs.hidden = true; return; }
     tabs.hidden = false;
     var list = [["sell", "Sell"], ["stock", "Stock"], ["expenses", "Expenses"], ["close", "Close day"]];
-    if (isFarmUser()) list = [["fsale", "Farm sale"], ["fexp", "Farm expense"], ["fmoney", "Cash check"]];
+    if (isFarmUser()) list = [["fsale", "Farm sale"], ["fexp", "Farm expense"], ["fcull", "Culls"], ["fmoney", "Cash check"]];
     if (role("manager")) list.push(["owner", "Reports"]);
     if (role("owner")) list.push(["fsale", "Farm"], ["money", "Money"], ["settings", "Settings"]);
-    var farmTab = /^f(sale|exp|money)$/.test(S.tab);
+    var farmTab = /^f(sale|exp|cull|money)$/.test(S.tab);
     tabs.innerHTML = list.map(function (t) { var sel = S.tab === t[0] || (!isFarmUser() && t[0] === "fsale" && farmTab); return '<button class="tab" role="tab" data-tab="' + t[0] + '" aria-selected="' + sel + '">' + t[1] + "</button>"; }).join("") +
       '<button class="tab" data-act="lock">Switch user</button>';
   }
@@ -802,10 +856,10 @@ td.n,th.n{text-align:right}
     if (!S.who) { v.innerHTML = viewSignIn(); return; }
     var day = openDay();
     // The farm manager sees only the farm book; Pork City staff never see it; the owner sees everything.
-    if (isFarmUser() && !/^f(sale|exp|money)$/.test(S.tab)) S.tab = "fsale";
-    if (!canFarm() && /^(fsale|fexp|fmoney|money)$/.test(S.tab)) S.tab = "sell";
+    if (isFarmUser() && !/^f(sale|exp|cull|money)$/.test(S.tab)) S.tab = "fsale";
+    if (!canFarm() && /^(fsale|fexp|fcull|fmoney|money)$/.test(S.tab)) S.tab = "sell";
     if (S.tab === "money" && !role("owner")) S.tab = isFarmUser() ? "fsale" : "sell";
-    if (/^(fsale|fexp|fmoney|money)$/.test(S.tab)) { v.innerHTML = { fsale: viewFarmSale, fexp: viewFarmExp, fmoney: viewFarmMoney, money: viewMoney }[S.tab](); return; }
+    if (/^(fsale|fexp|fcull|fmoney|money)$/.test(S.tab)) { v.innerHTML = { fsale: viewFarmSale, fexp: viewFarmExp, fcull: viewCulls, fmoney: viewFarmMoney, money: viewMoney }[S.tab](); return; }
     var fn = { sell: viewSell, stock: viewStock, expenses: viewExpenses, close: viewClose, owner: viewOwner, settings: viewSettings }[S.tab] || viewSell;
     if (!day && (S.tab === "sell" || S.tab === "stock" || S.tab === "expenses" || S.tab === "close")) { v.innerHTML = viewOpenDay(); return; }
     v.innerHTML = fn(day);
@@ -1069,7 +1123,7 @@ td.n,th.n{text-align:right}
       (mi.length ? '<h3>Meat in today</h3>' + mi.map(function (m) { return '<p class="small">' + (m.void ? '<span class="pill bad">void</span> ' : "") + (m.source === "farm" ? "Farm pig " + esc(m.tag) + ": " + KG(m.kg) + " kg carcass (" + m.live + " kg live, dressing " + P.dressing(m.live, m.kg) + "%)" : "Bought from " + esc(m.supplier) + ": " + KG(m.kg) + " kg for KES " + K(m.price)) + (m.inOpening ? " · in the opening weight" : "") + "</p>"; }).join("") : "") +
       (w.length ? '<h3>Spoilt / home use</h3>' + w.map(function (x) { return '<p class="small">' + KG(x.kg) + " kg · " + esc(x.reason) + " · " + esc(x.disposal) + "</p>"; }).join("") : "") + "</section>" +
       '<form class="panel" id="f-meat"><h2>Meat in</h2><p class="small muted">Manager only. Meat is accepted only with inspection.</p><div class="seg" role="group"><button type="button" data-src="farm" aria-pressed="true">From our farm</button><button type="button" data-src="bought" aria-pressed="false">Bought in</button></div>' +
-      '<div id="m-farm" class="grid2"><label>Pig (ear tag)<select id="m-tag"><option value="">Choose…</option>' + pl.map(function (p) { return '<option value="' + esc(p.tag) + '">' + esc(p.tag + " · " + (p.breed || "") + " " + (p.sex === "M" ? "male" : "female") + " · " + (p.role || "")) + "</option>"; }).join("") + "</select></label>" +
+      '<div id="m-farm" class="grid2">' + cullPicker() + '<label>Pig (ear tag)<select id="m-tag"><option value="">Choose…</option>' + pl.map(function (p) { return '<option value="' + esc(p.tag) + '">' + esc(p.tag + " · " + (p.breed || "") + " " + (p.sex === "M" ? "male" : "female") + " · " + (p.role || "")) + "</option>"; }).join("") + "</select></label>" +
       '<label>Slaughter date<input id="m-date" type="date" value="' + day.date + '"></label><label>Live weight (kg)<input id="m-live" type="number" step="0.1" min="0" inputmode="decimal"></label><label>Carcass weight (kg)<input id="m-carc" type="number" step="0.001" min="0" inputmode="decimal"></label>' +
       '<label>Inspector name<input id="m-insp"></label><label>Last medicine (name and date, or "none")<input id="m-med"></label>' +
       '<label class="check"><input type="checkbox" id="m-inspected"> Meat inspection done</label><label class="check"><input type="checkbox" id="m-wd"> Medicine withdrawal period is over (or no medicine)</label>' +
@@ -1091,13 +1145,15 @@ td.n,th.n{text-align:right}
     var day = openDay(), err = $("#m-err"), farm = !$("#m-farm").hidden, n = now(), s = settings();
     var rec = { date: day.date, at: n.iso, time: n.time, inOpening: $("#m-inopen").checked };
     if (farm) {
-      var tag = $("#m-tag").value, live = +$("#m-live").value, carc = P.r3($("#m-carc").value);
+      var cull = $("#m-cull") && $("#m-cull").value ? one("farmculls", $("#m-cull").value) : null;
+      var tag = $("#m-tag").value || (cull ? cullLabel(cull) : ""), live = +$("#m-live").value, carc = P.r3($("#m-carc").value);
       if (!tag) return (err.textContent = "Choose the pig's ear tag.");
       if (!(live > 0 && carc > 0)) return (err.textContent = "Enter live weight and carcass weight.");
       if (carc >= live) return (err.textContent = "Carcass weight must be less than live weight.");
       if (!$("#m-inspected").checked || !$("#m-insp").value.trim()) return (err.textContent = "Blocked: meat inspection must be done, with the inspector's name. Do not sell this meat.");
       if (!$("#m-wd").checked) return (err.textContent = "Blocked: the medicine withdrawal period must be over before the meat is sold. Call Dr. Muthomi.");
       Object.assign(rec, { source: "farm", tag: tag, live: live, kg: carc, slaughterDate: $("#m-date").value, inspected: true, inspector: $("#m-insp").value.trim(), lastMedicine: $("#m-med").value.trim() || "Not recorded", withdrawalOk: true, farmOfficeSync: "pending" });
+      if (cull) Object.assign(rec, { cullId: cull.id, cullLiveKg: cull.liveKg, cullCarcassKg: cull.carcassKg, weighDiffKg: P.r3(carc - cull.carcassKg) });
     } else {
       var sup = $("#m-sup").value === "__new" ? $("#m-sup-new").value.trim() : $("#m-sup").value, kg = P.r3($("#m-bkg").value), price = Math.round(+$("#m-price").value), paid = $("#m-paid").value, code = P.normCode($("#m-code").value);
       if (!sup) return (err.textContent = "Enter the supplier.");
@@ -1107,7 +1163,8 @@ td.n,th.n{text-align:right}
       Object.assign(rec, { source: "bought", supplier: sup, kg: kg, price: price, paidBy: paid, code: paid === "M-Pesa" ? code : null, inspected: true, stampSeen: true, pricePerKg: Math.round(price / kg) });
     }
     approve("manager", "Recording meat in.", function (by) {
-      rec.by = by.name; write("meatin", uid("m-" + day.date + "-"), rec);
+      rec.by = by.name; var mid = uid("m-" + day.date + "-"); write("meatin", mid, rec);
+      if (rec.cullId) { var cu = one("farmculls", rec.cullId); if (cu) write("farmculls", rec.cullId, Object.assign({}, cu, { meatInId: mid, receivedKg: rec.kg, receivedAt: n.iso, receivedBy: by.name, weighDiffKg: rec.weighDiffKg })); }
       if (!farm && rec.paidBy === "Cash from till") write("expenses", uid("e-" + day.date + "-"), { date: day.date, category: "Meat bought", amount: rec.price, centre: "Pork City", note: rec.kg + " kg from " + rec.supplier, by: by.name, at: n.iso });
       audit("Meat in", farm ? rec.tag : rec.supplier, rec.kg + " kg" + (farm ? " carcass, " + rec.live + " kg live" : ", KES " + rec.price) + "; by " + by.name);
       flash("Meat in saved: " + KG(rec.kg) + " kg." + (farm ? " Farm Office marks " + rec.tag + " as slaughtered at the nightly update." : ""), "ok"); renderAll();
@@ -1359,7 +1416,7 @@ td.n,th.n{text-align:right}
   function opts(list, sel) { return list.map(function (x) { return '<option' + (x === sel ? " selected" : "") + ">" + esc(x) + "</option>"; }).join(""); }
   function farmSeg() {
     if (isFarmUser()) return "";
-    return '<div class="seg" role="group" aria-label="Farm book">' + [["fsale", "Sales"], ["fexp", "Expenses"], ["fmoney", "Cash check"]].map(function (t) { return '<button type="button" data-tab="' + t[0] + '" aria-pressed="' + (S.tab === t[0]) + '">' + t[1] + "</button>"; }).join("") + "</div>";
+    return '<div class="seg" role="group" aria-label="Farm book">' + [["fsale", "Sales"], ["fexp", "Expenses"], ["fcull", "Culls"], ["fmoney", "Cash check"]].map(function (t) { return '<button type="button" data-tab="' + t[0] + '" aria-pressed="' + (S.tab === t[0]) + '">' + t[1] + "</button>"; }).join("") + "</div>";
   }
   function dateField(id) { var t = now().date; return '<label>Date<input id="' + id + '" type="date" value="' + t + '" max="' + t + '" required></label>'; }
   function codeField(id, label) { return '<label id="' + id + '-l" hidden>' + (label || "M-Pesa / till code") + '<input id="' + id + '" maxlength="12" autocapitalize="characters" placeholder="e.g. UJFEUAQL0V"></label>'; }
@@ -1375,7 +1432,7 @@ td.n,th.n{text-align:right}
     var list = recentRows("farmsales", 14), owing = P.live(all("farmsales")).filter(function (s) { return s.payment === "Credit (owing)" && !s.paid; });
     var t = P.farmDayTotals(now().date, all("farmsales"), all("farmexp"), all("farmmoney"));
     return msgHtml() + farmSeg() + '<div class="grid2"><form class="panel" id="f-fsale"><h2>Record a farm sale</h2>' +
-      '<div class="grid2">' + dateField("fs-date") + '<label>What was sold<select id="fs-item"><option value="">Choose…</option>' + opts(P.FARM_SALE_ITEMS) + "</select></label>" +
+      '<div class="grid2">' + dateField("fs-date") + '<label>What was sold<select id="fs-item"><option value="">Choose…</option>' + opts(P.FARM_SALE_ITEMS.filter(function (x) { return x !== "Carcass (culled pig)"; })) + "</select></label>" +
       '<label id="fs-qty-l" hidden>How many pigs<input id="fs-qty" type="number" min="1" step="1" inputmode="numeric"></label>' +
       '<label id="fs-tags-l" hidden>Ear tags (if tagged)<input id="fs-tags" placeholder="e.g. PPR037, PPR049" autocapitalize="characters"></label>' +
       '<label id="fs-kg-l" hidden>Live weight, kg (if weighed)<input id="fs-kg" type="number" min="0" step="0.1" inputmode="decimal"></label>' +
@@ -1517,12 +1574,12 @@ td.n,th.n{text-align:right}
   }
   function farmVoid(col, id) {
     var r = one(col, id); if (!r || r.void) return;
-    var label = col === "farmsales" ? r.item : col === "farmexp" ? r.category : r.kind;
-    sheet('<form class="panel" id="f-fvoid"><h3>Void ' + esc(label) + " KES " + K(r.amount) + '</h3><p class="small muted">The record stays in the Sheet, marked void. Christabel sees who voided it and why.</p><label>Reason<input id="fv-why" required></label><p class="err" id="fv-err"></p><div class="row"><button class="btn primary">Void</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
+    var label = col === "farmsales" ? r.item : col === "farmexp" ? r.category : col === "farmculls" ? "culled pig " + cullLabel(r) : r.kind;
+    sheet('<form class="panel" id="f-fvoid"><h3>Void ' + esc(label) + (r.amount != null ? " KES " + K(r.amount) : "") + '</h3><p class="small muted">The record stays in the Sheet, marked void. Christabel sees who voided it and why.</p><label>Reason<input id="fv-why" required></label><p class="err" id="fv-err"></p><div class="row"><button class="btn primary">Void</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
     $("#f-fvoid").addEventListener("submit", function (e) {
       e.preventDefault(); var why = $("#fv-why").value.trim(); if (!why) return ($("#fv-err").textContent = "Say why.");
       write(col, id, Object.assign({}, r, { void: { by: S.who.name, reason: why, at: now().iso } }));
-      audit("Farm record voided", label, "KES " + r.amount + "; " + why); closeSheet(); renderAll();
+      audit("Farm record voided", label, (r.amount != null ? "KES " + r.amount + "; " : "") + why); closeSheet(); renderAll();
     });
   }
   function farmToggles() {
@@ -1533,6 +1590,109 @@ td.n,th.n{text-align:right}
     if ($("#fx-pay")) $("#fx-code-l").hidden = $("#fx-pay").value !== "M-Pesa (manager)";
     if ($("#fx-cat")) { var feed = /feed|Feed/.test($("#fx-cat").value); $("#fx-pig-l").hidden = !feed; $("#fx-bio").hidden = !(feed && $("#fx-pigfarm").checked); }
     if ($("#fm-method")) $("#fm-code-l").hidden = $("#fm-method").value !== "M-Pesa (manager)";
+  }
+
+  // ------------------------------------------------ culled pigs (18 Nov 2026)
+  function cullLabel(c) { return c.tag ? c.tag : "Untagged (" + (c.untagged || "") + ")"; }
+  function cullPicker() {
+    var list = P.live(all("farmculls")).filter(function (c) { return c.dest === "Pork City butchery" && c.carcassKg > 0 && !c.meatInId; });
+    if (!list.length) return '<p class="small muted">No culled pigs waiting from the farm book.</p>';
+    return '<label>Culled pig from the farm book<select id="m-cull"><option value="">Not a culled pig</option>' + list.map(function (c) { return '<option value="' + esc(c.id) + '">' + esc(cullLabel(c) + " · " + c.type + " · " + P.kgShort(c.carcassKg) + " kg carcass · slaughtered " + P.prettyDate(c.slaughterDate)) + "</option>"; }).join("") + "</select></label>";
+  }
+  function fillFromCull() {
+    var c = one("farmculls", $("#m-cull").value);
+    if (!c) return;
+    if (c.tag && !$('#m-tag option[value="' + c.tag + '"]')) $("#m-tag").insertAdjacentHTML("beforeend", '<option value="' + esc(c.tag) + '">' + esc(c.tag) + "</option>");
+    $("#m-tag").value = c.tag || ""; $("#m-date").value = c.slaughterDate || ""; $("#m-live").value = c.liveKg; $("#m-carc").value = c.carcassKg;
+    $("#m-insp").value = c.inspector || ""; $("#m-inspected").checked = !!c.inspected; $("#m-wd").checked = !!c.withdrawalOk;
+    var dr = P.dressing(+c.liveKg, +c.carcassKg);
+    $("#m-dress").textContent = "Weights from the farm book. Weigh the carcass when it arrives; if your scale shows a different kg, enter yours (the difference is kept). Dressing " + dr + "%.";
+  }
+  function viewCulls() {
+    var from = since(90), list = all("farmculls").filter(function (c) { return (c.date || "") >= from; }).sort(function (a, b) { return (a.at || "") < (b.at || "") ? 1 : -1; });
+    var open = P.live(all("farmculls")).filter(function (c) { return P.cullStatus(c) !== "Done"; });
+    var m0 = now().date.slice(0, 8) + "01", mt = P.cullTotals(all("farmculls").filter(function (c) { return c.date >= m0; }));
+    var pl = pigs().filter(function (p) { return p.role !== "Hired boar"; });
+    function actions(c) {
+      if (c.void) return "";
+      var st = P.cullStatus(c), b = [];
+      if (st === "Waiting for carcass weight") b.push('<button class="btn small primary" data-act="fcarc" data-id="' + esc(c.id) + '">Add carcass weight</button>');
+      if (st === "Waiting for sale") b.push('<button class="btn small primary" data-act="fcullsale" data-id="' + esc(c.id) + '">Record the sale</button>');
+      if (!c.saleId && !c.meatInId) b.push(voidBtn("farmculls", c)); // once sold or at Pork City, void the sale or meat-in instead
+      return b.join(" ");
+    }
+    function pill(st) { return '<span class="pill ' + (st === "Done" ? "ok" : st === "Void" ? "bad" : "warn") + '">' + esc(st) + "</span>"; }
+    return msgHtml() + farmSeg() + '<div class="grid2"><form class="panel" id="f-fcull"><h2>Record a culled pig</h2><p class="small muted">Weigh the pig live before it leaves the pen. After slaughter, add the carcass weight from the list below.</p><div class="grid2">' + dateField("cu-date") +
+      '<label>Pig (ear tag)<select id="cu-tag"><option value="">Choose…</option>' + pl.map(function (p) { return '<option value="' + esc(p.tag) + '">' + esc(p.tag + " · " + (p.breed || "") + " " + (p.sex === "M" ? "male" : "female") + " · " + (p.role || "")) + "</option>"; }).join("") + '<option value="__untagged">No ear tag</option></select></label>' +
+      '<label id="cu-untag-l" hidden>Describe the untagged pig<input id="cu-untag" placeholder="e.g. black patch on back, Nov 2025 litter"></label>' +
+      '<label>Kind of pig<select id="cu-type"><option value="">Choose…</option>' + opts(P.CULL_TYPES) + "</select></label>" +
+      '<label>Why culled<select id="cu-reason"><option value="">Choose…</option>' + opts(P.CULL_REASONS) + "</select></label>" +
+      '<label>Live weight (kg)<input id="cu-live" type="number" min="0" step="0.1" inputmode="decimal" required></label>' +
+      '<label>Weighed with<select id="cu-how">' + opts(["Scale", "Weigh band / tape", "Estimate"], "Scale") + "</select></label>" +
+      '<label>Where it goes<select id="cu-dest"><option value="">Choose…</option>' + opts(P.CULL_DEST) + "</select></label></div>" +
+      '<label>Note<input id="cu-note" placeholder="e.g. 3 small litters in a row"></label>' +
+      '<label class="check"><input type="checkbox" id="cu-notsick"> The pig is not sick (a sick pig is never culled for meat: call Dr. Muthomi)</label>' +
+      '<label class="check"><input type="checkbox" id="cu-wd"> The medicine withdrawal period is over (or no medicine given)</label>' +
+      '<div class="note bio">Biosecurity: buyers, butchers and their vehicles stay outside the pig pens. Bring the pig to the loading point.</div>' +
+      '<p class="err" id="cu-err"></p><button class="btn primary">Save culled pig</button></form>' +
+      '<section class="panel"><h2>This month</h2><dl class="kv"><dt>Pigs culled</dt><dd>' + mt.count + "</dd><dt>Live weight</dt><dd>" + KG(mt.liveKg) + " kg</dd><dt>Carcass weight (slaughtered)</dt><dd>" + KG(mt.carcassKg) + " kg</dd><dt>Dressing (carcass ÷ live)</dt><dd>" + (mt.dressing == null ? "–" : mt.dressing + "%") + "</dd></dl>" +
+      (open.length ? "<h3>Still to finish</h3>" + open.map(function (c) { return '<p class="small"><b>' + esc(cullLabel(c)) + "</b> · " + esc(c.dest) + " · " + pill(P.cullStatus(c)) + " " + actions(c) + "</p>"; }).join("") : '<p class="small muted">Nothing waiting.</p>') +
+      '<p class="small muted">Christabel updates the pig in Farm Office (culled, sold or slaughtered).</p></section></div>' +
+      '<section class="panel"><h3>Culled pigs, last 90 days</h3>' + (list.length ? '<div class="scroll"><table><thead><tr><th>Date</th><th>Pig</th><th>Goes to</th><th class="n">Live kg</th><th class="n">Carcass kg</th><th class="n">Dressing</th><th>Status</th><th></th></tr></thead><tbody>' +
+        list.map(function (c) { return "<tr><td>" + esc(P.prettyDate(c.date)) + "</td><td>" + esc(cullLabel(c)) + '<br><span class="small muted">' + esc(c.type + " · " + c.reason) + "</span>" + pendingPill(c) + "</td><td class=small>" + esc(c.dest) + (c.receivedKg != null ? "<br>received " + P.kgShort(c.receivedKg) + " kg" + (c.weighDiffKg ? " (" + (c.weighDiffKg > 0 ? "+" : "") + P.kgShort(c.weighDiffKg) + ")" : "") : "") + '</td><td class="n">' + P.kgShort(c.liveKg) + '</td><td class="n">' + (c.carcassKg ? P.kgShort(c.carcassKg) : "–") + '</td><td class="n">' + (c.carcassKg ? P.dressing(+c.liveKg, +c.carcassKg) + "%" : "–") + "</td><td>" + pill(P.cullStatus(c)) + "</td><td>" + actions(c) + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<p class="muted">No culled pigs recorded yet.</p>') + "</section>";
+  }
+  function submitCull(e) {
+    e.preventDefault();
+    var n = now(), t = $("#cu-tag").value, rec = { date: $("#cu-date").value, tag: t === "__untagged" ? "" : t, untagged: t === "__untagged" ? $("#cu-untag").value.trim() : "",
+      type: $("#cu-type").value, reason: $("#cu-reason").value, liveKg: P.r3($("#cu-live").value), weighedWith: $("#cu-how").value, dest: $("#cu-dest").value,
+      note: $("#cu-note").value.trim(), notSick: $("#cu-notsick").checked, withdrawalOk: $("#cu-wd").checked, by: S.who.name, byId: S.who.id, at: n.iso, time: n.time, device: device };
+    if (!rec.date || rec.date > n.date) return ($("#cu-err").textContent = "Choose the date (not a future date).");
+    var chk = P.checkCull(rec); if (!chk.ok) return ($("#cu-err").textContent = chk.errors.join(" "));
+    var dup = P.live(all("farmculls")).filter(function (c) { return rec.tag && c.tag === rec.tag; })[0];
+    if (dup) return ($("#cu-err").textContent = rec.tag + " was already recorded as culled on " + P.prettyDate(dup.date) + ".");
+    var id = uid("cu-" + rec.date + "-"); write("farmculls", id, rec);
+    audit("Pig culled", cullLabel(rec), rec.type + "; " + rec.reason + "; " + rec.liveKg + " kg live; " + rec.dest);
+    flash("Saved: " + cullLabel(rec) + " culled, " + P.kgShort(rec.liveKg) + " kg live. " + (P.cullSlaughtered(rec.dest) ? "After slaughter, tap Add carcass weight." : "Now record the sale."), "ok"); renderAll();
+  }
+  function carcassSheet(id) {
+    var c = one("farmculls", id); if (!c || c.carcassKg) return;
+    var insp = P.cullNeedsInspection(c.dest);
+    sheet('<form class="panel" id="f-fcarc"><h3>Carcass weight · ' + esc(cullLabel(c)) + '</h3><p class="small muted">Live weight ' + P.kgShort(c.liveKg) + " kg. Goes to " + esc(c.dest) + '.</p><div class="grid2">' +
+      '<label>Slaughter date<input id="ca-date" type="date" value="' + now().date + '" max="' + now().date + '"></label><label>Carcass weight (kg)<input id="ca-kg" type="number" min="0" step="0.001" inputmode="decimal"></label>' +
+      '<label>Slaughtered at<input id="ca-place" placeholder="e.g. Tunyai slaughter slab"></label>' + (insp ? '<label>Meat inspector name<input id="ca-insp"></label>' : "") + "</div>" +
+      (insp ? '<label class="check"><input type="checkbox" id="ca-inspected"> Meat inspection done</label>' : "") +
+      '<p class="small" id="ca-dress"></p><label class="check" id="ca-ok-l" hidden><input type="checkbox" id="ca-ok"> Both weights are right</label>' +
+      '<p class="err" id="ca-err"></p><div class="row"><button class="btn primary">Save carcass weight</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
+    $("#ca-kg").addEventListener("input", function () { var d = P.dressing(+c.liveKg, +$("#ca-kg").value); $("#ca-dress").textContent = d ? "Dressing " + d + "% (carcass ÷ live)." : ""; });
+    $("#f-fcarc").addEventListener("submit", function (e) {
+      e.preventDefault(); var n = now();
+      var s = { carcassKg: P.r3($("#ca-kg").value), slaughterDate: $("#ca-date").value, place: $("#ca-place").value.trim(), inspector: insp ? $("#ca-insp").value.trim() : "", inspected: insp ? $("#ca-inspected").checked : false, dressingConfirmed: $("#ca-ok").checked };
+      if (s.slaughterDate > n.date) return ($("#ca-err").textContent = "The slaughter date cannot be in the future.");
+      var chk = P.checkCarcass(c, s);
+      if (!chk.ok) { if (chk.dressing != null && (chk.dressing < 55 || chk.dressing > 85)) $("#ca-ok-l").hidden = false; return ($("#ca-err").textContent = chk.errors.join(" ")); }
+      write("farmculls", id, Object.assign({}, c, { carcassKg: s.carcassKg, slaughterDate: s.slaughterDate, place: s.place, inspector: s.inspector, inspected: s.inspected, dressing: chk.dressing, carcassBy: S.who.name, carcassAt: n.iso }));
+      audit("Cull carcass weighed", cullLabel(c), s.carcassKg + " kg carcass of " + c.liveKg + " kg live (" + chk.dressing + "%)");
+      closeSheet(); flash("Carcass weight saved: " + P.kgShort(s.carcassKg) + " kg (dressing " + chk.dressing + "%)." + (c.dest === "Pork City butchery" ? " Pork City picks it from Meat in." : c.dest === "Slaughtered, carcass sold" ? " Now record the sale." : ""), "ok"); renderAll();
+    });
+  }
+  function cullSaleSheet(id) {
+    var c = one("farmculls", id); if (!c || c.saleId) return;
+    var item = c.dest === "Sold live to a buyer" ? "Live pig (for meat)" : "Carcass (culled pig)";
+    sheet('<form class="panel" id="f-fcsale"><h3>Sale · ' + esc(cullLabel(c)) + '</h3><p class="small muted">' + esc(item) + " · " + (c.carcassKg ? P.kgShort(c.carcassKg) + " kg carcass" : P.kgShort(c.liveKg) + " kg live") + '</p><div class="grid2">' + dateField("cs-date") +
+      '<label>Amount the buyer paid (KES)<input id="cs-amt" type="number" min="0" step="1" inputmode="numeric"></label><label>Paid how<select id="cs-pay">' + opts(P.FARM_PAY_IN, "Cash") + "</select></label>" + codeField("cs-code") +
+      '<label>Buyer name<input id="cs-cust"></label><label>Buyer phone<input id="cs-phone" inputmode="tel" placeholder="07…"></label></div><p class="err" id="cs-err"></p><div class="row"><button class="btn primary">Save sale</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
+    var tg = function () { $("#cs-code-l").hidden = !P.needsCode($("#cs-pay").value); }; $("#cs-pay").addEventListener("change", tg); tg();
+    $("#f-fcsale").addEventListener("submit", function (e) {
+      e.preventDefault(); var n = now();
+      var rec = { date: $("#cs-date").value, item: item, qty: item === "Live pig (for meat)" ? 1 : null, tags: c.tag || "", liveKg: c.liveKg, carcassKg: c.carcassKg || null, amount: Math.round(+$("#cs-amt").value),
+        payment: $("#cs-pay").value, code: P.needsCode($("#cs-pay").value) ? P.normCode($("#cs-code").value) : null, customer: $("#cs-cust").value.trim(), phone: $("#cs-phone").value.trim(),
+        note: "Culled " + c.type.toLowerCase() + ": " + c.reason, withdrawalOk: !!c.withdrawalOk, cullId: id, by: S.who.name, byId: S.who.id, at: n.iso, time: n.time, device: device };
+      if (!rec.date || rec.date > n.date) return ($("#cs-err").textContent = "Choose the date of the sale (not a future date).");
+      var chk = P.checkFarmSale(rec, allCodes()); if (!chk.ok) return ($("#cs-err").textContent = chk.errors.join(" "));
+      var sid = uid("fs-" + rec.date + "-"); write("farmsales", sid, rec); write("farmculls", id, Object.assign({}, c, { saleId: sid, saleKes: rec.amount }));
+      audit("Cull sold", cullLabel(c), "KES " + rec.amount + " " + rec.payment + (rec.code ? " " + rec.code : ""));
+      closeSheet(); flash("Sale saved: " + cullLabel(c) + " KES " + K(rec.amount) + ". It counts in the cash check.", "ok"); renderAll();
+    });
   }
 
   // ------------------------------------------------ Money: the whole business in one place (owner)
@@ -1653,6 +1813,8 @@ td.n,th.n{text-align:right}
       case "csv-farm": csvFarm(); break;
       case "fpaid": markPaid(id); break;
       case "fvoid": farmVoid(a.getAttribute("data-col"), id); break;
+      case "fcarc": carcassSheet(id); break;
+      case "fcullsale": cullSaleSheet(id); break;
       case "freport": var fc = one("farmdays", id); if (fc && fc.report) showFarmReport(fc); break;
       case "set-pin": setPinFlow(one("users", id), false); break;
       case "toggle-user": var u = one("users", id); write("users", id, Object.assign({}, u, { active: u.active === false })); audit(u.active === false ? "Staff turned on" : "Staff turned off", u.name); renderView(); break;
@@ -1666,6 +1828,8 @@ td.n,th.n{text-align:right}
     if (e.target.id === "x-cat" || e.target.id === "x-pigfarm") expCatChange();
     if (/^(fs-item|fs-pay|fp-pay|fx-pay|fx-cat|fx-pigfarm|fm-method)$/.test(e.target.id)) farmToggles();
     if (e.target.id === "fc-restart") countPreview();
+    if (e.target.id === "cu-tag") $("#cu-untag-l").hidden = e.target.value !== "__untagged";
+    if (e.target.id === "m-cull") fillFromCull();
     if (e.target.hasAttribute && e.target.hasAttribute("data-tick") && role("owner")) tick(e.target.getAttribute("data-tick"), e.target.checked);
     if (e.target.id === "m-sup") $("#m-sup-new-l").hidden = e.target.value !== "__new";
     if (e.target.id === "m-live" || e.target.id === "m-carc") { var dr = P.dressing(+$("#m-live").value, +$("#m-carc").value); $("#m-dress").textContent = dr ? "Dressing " + dr + "% (carcass ÷ live)." : ""; }
@@ -1674,7 +1838,7 @@ td.n,th.n{text-align:right}
   document.addEventListener("submit", function (e) {
     var id = e.target.id;
     if (id === "f-open") submitOpen(e); else if (id === "f-meat") submitMeat(e); else if (id === "f-waste") submitWaste(e);
-    else if (id === "f-fsale") submitFarmSale(e); else if (id === "f-fexp") submitFarmExp(e); else if (id === "f-fmove") submitFarmMove(e); else if (id === "f-fcount") submitFarmCount(e);
+    else if (id === "f-fsale") submitFarmSale(e); else if (id === "f-fexp") submitFarmExp(e); else if (id === "f-fmove") submitFarmMove(e); else if (id === "f-fcount") submitFarmCount(e); else if (id === "f-fcull") submitCull(e);
     else if (id === "f-exp") submitExp(e); else if (id === "f-close") submitClose(e); else if (id === "f-prices") savePrices(e); else if (id === "f-rules") saveRules(e);
     else if (id === "f-adduser") { e.preventDefault(); var n = $("#u-name").value.trim(); if (!n) return; var uidv = "u-" + n.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 20) + "-" + uid().slice(-4); write("users", uidv, { name: n, role: $("#u-role").value, order: 5, active: true }); audit("Staff added", n, $("#u-role").value); renderView(); }
   });
