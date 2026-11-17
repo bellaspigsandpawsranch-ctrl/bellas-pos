@@ -452,7 +452,139 @@ td.n,th.n{text-align:right}
     return rows.map(function (r) { return r.map(function (v) { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }).join(","); }).join("\n");
   }
 
-  var api = { ITEMS: ITEMS, SIDES: SIDES, PORTIONS: PORTIONS, PORTION_LABEL: PORTION_LABEL, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+  // ================================================================== FARM BOOK (farm manager)
+  // Christabel, 17 Nov 2026: the farm manager records farm sales and expenses in this same app.
+  // Money flow: buyers pay the farm manager (cash or his/her M-Pesa); the manager pays farm costs from it
+  // and sends the balance to Christabel. Reconcile: cash counted vs expected, M-Pesa codes vs statement,
+  // money sent to Christabel, float received vs spent. No prices are set here: staff enter what was charged.
+  var FARM_SALE_ITEMS = ["Live pig (for meat)", "Weaner / piglet", "Breeding stock", "Manure", "Crops / produce", "Other"];
+  var FARM_EXP_CATS = ["Pig feed", "Feed ingredients (maize, pollard, peas)", "Vet & medicine", "Casual labour", "Transport", "Fuel",
+    "Water & electricity", "Repairs & maintenance", "Equipment & tools", "Disinfectant & biosecurity", "Breeding (boar hire / AI)",
+    "Phone & airtime", "Other"];
+  // Where the money is. "Cash" and "M-Pesa (manager)" are held by the farm manager and count in the cash check.
+  var FARM_PAY_IN = ["Cash", "M-Pesa (manager)", "Paid to Christabel", "Till 3014485", "Credit (owing)"];
+  // Farm costs paid from the Pork City till are recorded in the POS Expenses screen (as now), never here, so they are not counted twice.
+  var FARM_PAY_OUT = ["Cash", "M-Pesa (manager)", "Paid by Christabel"];
+  var FARM_MOVES = { "From Christabel": 1, "Sent to Christabel": -1, "Other money in": 1, "Other money out": -1 };
+  function farmPot(method) { return method === "Cash" ? "cash" : method === "M-Pesa (manager)" ? "mpesa" : null; }
+  function needsCode(method) { return method === "M-Pesa (manager)" || method === "Paid to Christabel" || method === "Till 3014485"; }
+
+  function checkFarmSale(s, usedCodes) {
+    var e = [];
+    if (FARM_SALE_ITEMS.indexOf(s.item) < 0) e.push("Choose what was sold.");
+    if (!(Math.round(+s.amount) > 0)) e.push("Enter the amount the buyer paid (KES).");
+    if (s.item === "Live pig (for meat)" || s.item === "Breeding stock" || s.item === "Weaner / piglet") {
+      if (!(Math.round(+s.qty) > 0)) e.push("Enter how many pigs.");
+    }
+    if (s.item === "Live pig (for meat)" && !s.withdrawalOk) e.push("Blocked: a pig sold for meat must be past its medicine withdrawal period. Check with Dr. Muthomi.");
+    if (s.item === "Other" && !String(s.note || "").trim()) e.push("Say what was sold.");
+    if (FARM_PAY_IN.indexOf(s.payment) < 0) e.push("Choose how the buyer paid.");
+    if (needsCode(s.payment)) {
+      var c = normCode(s.code);
+      if (!validCode(c)) e.push("Enter the 10-character M-Pesa / till code (e.g. UJFEUAQL0V).");
+      else if (usedCodes && usedCodes[c]) e.push("Code " + c + " has already been used (" + usedCodes[c] + "). Check the message.");
+    }
+    if (s.payment === "Credit (owing)" && !String(s.customer || "").trim()) e.push("Write the buyer's name for a credit sale.");
+    return { ok: !e.length, errors: e };
+  }
+  function checkFarmExpense(x, usedCodes) {
+    var e = [];
+    if (FARM_EXP_CATS.indexOf(x.category) < 0) e.push("Choose what the money was for.");
+    if (!(Math.round(+x.amount) > 0)) e.push("Enter the amount (KES).");
+    if (!String(x.description || "").trim()) e.push("Say what was bought or paid for, e.g. 2 bags sow & weaner meal.");
+    if (FARM_PAY_OUT.indexOf(x.payment) < 0) e.push("Choose how it was paid.");
+    if (x.payment === "M-Pesa (manager)") {
+      var c = normCode(x.code);
+      if (!validCode(c)) e.push("Enter the 10-character M-Pesa code from the payment message.");
+      else if (usedCodes && usedCodes[c]) e.push("Code " + c + " has already been used (" + usedCodes[c] + ").");
+    }
+    return { ok: !e.length, errors: e };
+  }
+  function checkFarmMove(m, usedCodes) {
+    var e = [];
+    if (!(m.kind in FARM_MOVES)) e.push("Choose the kind of money movement.");
+    if (!(Math.round(+m.amount) > 0)) e.push("Enter the amount (KES).");
+    if (m.method !== "Cash" && m.method !== "M-Pesa (manager)") e.push("Choose cash or M-Pesa.");
+    if (m.method === "M-Pesa (manager)") {
+      var c = normCode(m.code);
+      if (!validCode(c)) e.push("Enter the 10-character M-Pesa code.");
+      else if (usedCodes && usedCodes[c]) e.push("Code " + c + " has already been used (" + usedCodes[c] + ").");
+    }
+    if ((m.kind === "Other money in" || m.kind === "Other money out") && !String(m.note || "").trim()) e.push("Say where the money came from or went.");
+    return { ok: !e.length, errors: e };
+  }
+
+  // Each record's effect on the money held by the farm manager: { cash: +/-, mpesa: +/- }
+  function farmEffect(col, r) {
+    var o = { cash: 0, mpesa: 0 }, a = Math.round(+r.amount || 0), pot;
+    if (r.void) return o;
+    if (col === "farmsales") { pot = farmPot(r.payment); if (pot) o[pot] += a; }
+    if (col === "farmexp") { pot = farmPot(r.payment); if (pot) o[pot] -= a; }
+    if (col === "farmmoney") { pot = farmPot(r.method); if (pot) o[pot] += FARM_MOVES[r.kind] * a; }
+    return o;
+  }
+  // Money the farm manager should be holding now. Starts from the first count (the "start" check) and adds every
+  // record entered after it (by entry time), so a late receipt corrects the running gap instead of being lost.
+  function farmBalance(start, recs) {
+    var b = { cash: start ? Math.round(+start.cashCounted || 0) : 0, mpesa: start && start.mpesaCounted != null ? Math.round(+start.mpesaCounted) : 0, mpesaKnown: !!(start && start.mpesaCounted != null) };
+    (recs || []).forEach(function (x) {
+      if (!start || x.r.at > start.at) { var e = farmEffect(x.col, x.r); b.cash += e.cash; b.mpesa += e.mpesa; }
+      // a credit sale paid later counts when the money came in
+      var p = x.col === "farmsales" && !x.r.void && x.r.paid, pot = p && farmPot(p.method);
+      if (pot && (!start || p.at > start.at)) b[pot] += Math.round(+p.amount || 0);
+    });
+    return b;
+  }
+  // Totals for one date (by record date) — what was sold, spent and moved that day
+  function farmDayTotals(date, sales, exps, moves) {
+    var t = { date: date, sales: 0, salesCount: 0, toManager: 0, toChristabel: 0, credit: 0, expenses: 0, expByManager: 0, expByChristabel: 0,
+      fromChristabel: 0, sentToChristabel: 0, byItem: {}, byCat: {} };
+    live(sales).filter(function (s) { return s.date === date; }).forEach(function (s) {
+      var a = Math.round(+s.amount || 0); t.sales += a; t.salesCount++;
+      t.byItem[s.item] = (t.byItem[s.item] || 0) + a;
+      if (farmPot(s.payment)) t.toManager += a; else if (s.payment === "Credit (owing)") t.credit += a; else t.toChristabel += a;
+    });
+    live(exps).filter(function (x) { return x.date === date; }).forEach(function (x) {
+      var a = Math.round(+x.amount || 0); t.expenses += a; t.byCat[x.category] = (t.byCat[x.category] || 0) + a;
+      if (farmPot(x.payment)) t.expByManager += a; else t.expByChristabel += a;
+    });
+    live(moves).filter(function (m) { return m.date === date; }).forEach(function (m) {
+      var a = Math.round(+m.amount || 0);
+      if (m.kind === "From Christabel") t.fromChristabel += a;
+      if (m.kind === "Sent to Christabel") t.sentToChristabel += a;
+    });
+    t.net = t.sales - t.expenses;
+    return t;
+  }
+  function farmCheckResult(expected, cashCounted, mpesaCounted) {
+    var r = { cashGap: Math.round(+cashCounted) - expected.cash };
+    r.mpesaGap = mpesaCounted == null || mpesaCounted === "" ? null : Math.round(+mpesaCounted) - expected.mpesa;
+    return r;
+  }
+  function farmReportText(date, t, check, expected, who) {
+    var by = Object.keys(t.byItem).map(function (k) { return k + " " + kes(t.byItem[k]); }).join(", ") || "none";
+    var cats = Object.keys(t.byCat).map(function (k) { return k + " " + kes(t.byCat[k]); }).join(", ") || "none";
+    var lines = [
+      "FARM – " + prettyDate(date),
+      "SALES: KES " + kes(t.sales) + " (" + by + ")",
+      "  to manager KES " + kes(t.toManager) + " | to Christabel/Till KES " + kes(t.toChristabel) + (t.credit ? " | owing KES " + kes(t.credit) : ""),
+      "EXPENSES: KES " + kes(t.expenses) + " (" + cats + ")",
+      "  paid by manager KES " + kes(t.expByManager) + (t.expByChristabel ? " | by Christabel KES " + kes(t.expByChristabel) : ""),
+      "MONEY: from Christabel KES " + kes(t.fromChristabel) + " | sent to Christabel KES " + kes(t.sentToChristabel)
+    ];
+    if (check) {
+      lines.push("CASH CHECK: counted KES " + kes(check.cashCounted) + " | expected KES " + kes(check.expectedCash) + " | gap " + (check.cashGap === 0 ? "0" : (check.cashGap < 0 ? "short " : "over ") + kes(Math.abs(check.cashGap))));
+      if (check.mpesaCounted != null) lines.push("FARM M-PESA: balance KES " + kes(check.mpesaCounted) + " | expected KES " + kes(check.expectedMpesa));
+      if (check.reason) lines.push("Note: " + check.reason);
+    } else if (expected) lines.push("Money with the manager (expected): cash KES " + kes(expected.cash) + (expected.mpesaKnown ? " | M-Pesa KES " + kes(expected.mpesa) : ""));
+    if (who) lines.push("By " + who);
+    return lines.join("\n");
+  }
+
+  var api = { ITEMS: ITEMS,
+    FARM_SALE_ITEMS: FARM_SALE_ITEMS, FARM_EXP_CATS: FARM_EXP_CATS, FARM_PAY_IN: FARM_PAY_IN, FARM_PAY_OUT: FARM_PAY_OUT, FARM_MOVES: FARM_MOVES,
+    farmPot: farmPot, needsCode: needsCode, checkFarmSale: checkFarmSale, checkFarmExpense: checkFarmExpense, checkFarmMove: checkFarmMove,
+    farmEffect: farmEffect, farmBalance: farmBalance, farmDayTotals: farmDayTotals, farmCheckResult: farmCheckResult, farmReportText: farmReportText, SIDES: SIDES, PORTIONS: PORTIONS, PORTION_LABEL: PORTION_LABEL, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     EXPENSE_CATS: EXPENSE_CATS, FARM: FARM, r3: r3, kes: kes, kg3: kg3, kgShort: kgShort, applyRounding: applyRounding, perKg: perKg,
     lineFromKg: lineFromKg, lineFromKes: lineFromKes, platterLine: platterLine, sideBasis: sideBasis, suggestPortion: suggestPortion,
     sideLine: sideLine, canAddSide: canAddSide, cartTotals: cartTotals, normCode: normCode, validCode: validCode,
@@ -470,7 +602,8 @@ td.n,th.n{text-align:right}
   var $ = function (s, r) { return (r || document).querySelector(s); };
   var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
   var K = P.kes, KG = P.kg3;
-  var COLS = ["days", "sales", "expenses", "meatin", "waste", "users", "config", "audit", "recon"];
+  var COLS = ["days", "sales", "expenses", "meatin", "waste", "users", "config", "audit", "recon", "farmsales", "farmexp", "farmmoney", "farmdays"];
+  var FARM_COLS = ["farmsales", "farmexp", "farmmoney", "farmdays"];
   var QKEY = "bpc-queue-v1", SKEY = "bpc-session-v1", DKEY = "bpc-device-v1";
 
   // ------------------------------------------------------------------ local helpers
@@ -505,7 +638,9 @@ td.n,th.n{text-align:right}
   function openDay() { return all("days").filter(function (d) { return d.status === "open"; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0] || null; }
   function forDate(col, date) { return all(col).filter(function (x) { return x.date === date; }); }
   function totalsFor(day) { return P.dayTotals(day, forDate("sales", day.date), forDate("expenses", day.date), forDate("meatin", day.date), forDate("waste", day.date)); }
-  function role(r) { var order = { cashier: 1, manager: 2, owner: 3 }; return S.who && order[S.who.role] >= order[r]; }
+  function role(r) { var order = { farm: 0, cashier: 1, manager: 2, owner: 3 }; return S.who && order[S.who.role] >= order[r]; }
+  function isFarmUser() { return !!S.who && S.who.role === "farm"; }
+  function canFarm() { return !!S.who && (S.who.role === "farm" || S.who.role === "owner"); }
 
   // ------------------------------------------------------------------ writes: always through the queue, so nothing is lost when the signal drops
   function write(col, id, data) {
@@ -523,7 +658,7 @@ td.n,th.n{text-align:right}
   // The phone is the working copy: every record is saved on the phone first, then sent to the Sheet in
   // batches whenever there is signal. Every minute the phone pulls what other phones (e.g. Christabel's) changed.
   var CONN_KEY = "bpc-conn-v1", CKEY = "bpc-cache-v2", SYNC_KEY = "bpc-lastsync-v1";
-  var CACHED = ["days", "users", "config", "sales", "expenses", "meatin", "waste", "recon", "audit"];
+  var CACHED = ["days", "users", "config", "sales", "expenses", "meatin", "waste", "recon", "audit", "farmsales", "farmexp", "farmmoney", "farmdays"];
   S.conn = ls(CONN_KEY); S.loaded = {}; S.lastSync = ls(SYNC_KEY) || null; S.lastPullOk = null;
   (function readSetupLink() {
     // setup link: https://<site>/#setup=<script url>|<shop key>  (sent once by Christabel)
@@ -546,10 +681,14 @@ td.n,th.n{text-align:right}
     S.flushing = true;
     var batch = S.queue.slice(0, 40);
     api("POST", { action: "push" }, { key: S.conn.key, device: device, writes: batch.map(function (q) { return { col: q.col, id: q.id, data: q.data }; }) }).then(function (j) {
-      batch.forEach(function (q) { S.server[q.col][q.id] = q.data; });
-      S.queue = S.queue.filter(function (x) { return batch.indexOf(x) < 0; }); ls(QKEY, S.queue);
-      S.flushing = false; S.lastFlushError = null; S.offline = false; S.lastSync = j.time || new Date().toISOString(); cacheSoon(); renderTop();
-      if (S.queue.length) flush();
+      // Drop from the phone only what the Sheet confirms it saved. Anything refused stays on the phone and goes to the back of the queue.
+      var ok = {}; (Array.isArray(j.saved) ? j.saved : batch.map(function (q) { return q.id; })).forEach(function (id) { ok[id] = 1; });
+      var done = batch.filter(function (q) { return ok[q.id]; }), refused = batch.filter(function (q) { return !ok[q.id]; });
+      done.forEach(function (q) { S.server[q.col][q.id] = q.data; });
+      S.queue = S.queue.filter(function (x) { return batch.indexOf(x) < 0; }).concat(refused); ls(QKEY, S.queue);
+      S.flushing = false; S.offline = false; S.lastSync = j.time || new Date().toISOString(); cacheSoon();
+      S.refused = refused.length; S.lastFlushError = refused.length ? "The Sheet did not accept " + refused.length + " record(s)" : null; renderTop();
+      if (S.queue.length > refused.length) flush();
     }, function (e) {
       S.flushing = false; S.lastFlushError = String(e && e.message || e); S.offline = true;
       if (/bad key/i.test(S.lastFlushError)) S.badKey = true;
@@ -563,7 +702,7 @@ td.n,th.n{text-align:right}
     try {
       var keep = P.addDays(now().date, -62), c = { at: Date.now(), server: {} };
       CACHED.forEach(function (col) {
-        var m = {}; Object.keys(S.server[col]).forEach(function (id) { var d = S.server[col][id]; if (col === "users" || col === "config" || col === "days" || !d.date || d.date >= keep) m[id] = d; });
+        var m = {}; Object.keys(S.server[col]).forEach(function (id) { var d = S.server[col][id]; if (col === "users" || col === "config" || col === "days" || FARM_COLS.indexOf(col) >= 0 || !d.date || d.date >= keep) m[id] = d; });
         if (col === "audit") { var ids = Object.keys(m).sort(function (x, y) { return (m[x].at || "") < (m[y].at || "") ? 1 : -1; }).slice(0, 200), a = {}; ids.forEach(function (i) { a[i] = m[i]; }); m = a; }
         c.server[col] = m;
       });
@@ -624,27 +763,35 @@ td.n,th.n{text-align:right}
 
   function renderTop() {
     var st = $("#stat"), day = openDay(), html = [];
-    if (day) {
+    if (isFarmUser()) {
+      var fb = farmExpected();
+      html.push('<span class="chip">Farm book</span>');
+      if (fb.start) html.push('<span class="chip">With you: cash KES ' + K(fb.cash) + (fb.mpesaKnown ? " · M-Pesa KES " + K(fb.mpesa) : "") + "</span>");
+      else if (S.ready) html.push('<span class="chip warn">Do the first cash count</span>');
+    } else if (day) {
       var t = totalsFor(day);
       html.push('<span class="chip ok">Day open · ' + esc(P.prettyDate(day.date)) + "</span>");
       html.push('<span class="chip ' + (t.stockLeft < 1 ? "bad" : "") + '">Stock ' + KG(t.stockLeft) + " kg</span>");
       html.push('<span class="chip">KES ' + K(t.takings) + " · " + KG(t.soldKg) + " kg sold</span>");
     } else if (S.ready && S.conn) html.push('<span class="chip warn">No day open</span>');
-    if (S.who) html.push('<span class="chip">' + esc(S.who.name) + " · " + esc(S.who.role) + "</span>");
+    if (S.who) html.push('<span class="chip">' + esc(S.who.name) + " · " + esc(S.who.role === "farm" ? "farm manager" : S.who.role) + "</span>");
     st.innerHTML = html.join("");
     var b = [];
     if (S.conn && S.badKey) b.push('<div class="banner bad">The Google Sheet did not accept this phone\'s shop key. Ask Christabel for a new setup link.</div>');
     else if (S.conn && S.offline) b.push('<div class="banner warn">No signal. The counter keeps working; ' + (S.queue.length ? S.queue.length + " record" + (S.queue.length > 1 ? "s" : "") + " saved on this phone will" : "everything will") + " go to the Google Sheet when the signal is back. Do not clear the browser data on this phone.</div>");
     else if (S.queue.length > 5) b.push('<div class="banner info">Sending ' + S.queue.length + " records to the Google Sheet…</div>");
+    if (S.conn && S.refused && !S.offline) b.push('<div class="banner bad">' + S.refused + " record" + (S.refused > 1 ? "s are" : " is") + " kept on this phone because the Google Sheet has not been updated for them yet. Do not clear the browser data. Tell Christabel.</div>");
     if (S.storageFull) b.push('<div class="banner bad">This phone\'s storage for the counter is full. Connect to the internet so records can be sent, then call Christabel.</div>');
     $("#banners").innerHTML = b.join("");
     var tabs = $("#tabs");
     if (!S.who) { tabs.hidden = true; return; }
     tabs.hidden = false;
     var list = [["sell", "Sell"], ["stock", "Stock"], ["expenses", "Expenses"], ["close", "Close day"]];
+    if (isFarmUser()) list = [["fsale", "Farm sale"], ["fexp", "Farm expense"], ["fmoney", "Cash check"]];
     if (role("manager")) list.push(["owner", "Reports"]);
-    if (role("owner")) list.push(["settings", "Settings"]);
-    tabs.innerHTML = list.map(function (t) { return '<button class="tab" role="tab" data-tab="' + t[0] + '" aria-selected="' + (S.tab === t[0]) + '">' + t[1] + "</button>"; }).join("") +
+    if (role("owner")) list.push(["fsale", "Farm"], ["money", "Money"], ["settings", "Settings"]);
+    var farmTab = /^f(sale|exp|money)$/.test(S.tab);
+    tabs.innerHTML = list.map(function (t) { var sel = S.tab === t[0] || (!isFarmUser() && t[0] === "fsale" && farmTab); return '<button class="tab" role="tab" data-tab="' + t[0] + '" aria-selected="' + sel + '">' + t[1] + "</button>"; }).join("") +
       '<button class="tab" data-act="lock">Switch user</button>';
   }
 
@@ -654,6 +801,11 @@ td.n,th.n{text-align:right}
     if (!S.ready) { v.innerHTML = '<div class="panel"><h2>Opening the counter</h2><p class="muted" role="status">Getting the latest from the Google Sheet…</p></div>'; return; }
     if (!S.who) { v.innerHTML = viewSignIn(); return; }
     var day = openDay();
+    // The farm manager sees only the farm book; Pork City staff never see it; the owner sees everything.
+    if (isFarmUser() && !/^f(sale|exp|money)$/.test(S.tab)) S.tab = "fsale";
+    if (!canFarm() && /^(fsale|fexp|fmoney|money)$/.test(S.tab)) S.tab = "sell";
+    if (S.tab === "money" && !role("owner")) S.tab = isFarmUser() ? "fsale" : "sell";
+    if (/^(fsale|fexp|fmoney|money)$/.test(S.tab)) { v.innerHTML = { fsale: viewFarmSale, fexp: viewFarmExp, fmoney: viewFarmMoney, money: viewMoney }[S.tab](); return; }
     var fn = { sell: viewSell, stock: viewStock, expenses: viewExpenses, close: viewClose, owner: viewOwner, settings: viewSettings }[S.tab] || viewSell;
     if (!day && (S.tab === "sell" || S.tab === "stock" || S.tab === "expenses" || S.tab === "close")) { v.innerHTML = viewOpenDay(); return; }
     v.innerHTML = fn(day);
@@ -678,7 +830,7 @@ td.n,th.n{text-align:right}
     if (!us.length && S.conn && !S.lastPullOk && !S.offline) return '<div class="panel"><h2>Loading staff…</h2></div>';
     if (!us.length) return '<div class="panel"><h2>Staff list not set up</h2><p>No staff are on this counter yet.' + (ownerSetupOpen() ? ' First setup: <button class="btn primary" data-act="seed-users">Add Christabel, Kangai and Mama Doris</button>' : " Ask Christabel to set up the staff list.") + "</p></div>";
     return '<div class="panel"><h2>Who is serving?</h2><p class="muted">Tap your name, then enter your PIN.</p><div class="tiles">' +
-      us.map(function (u) { return '<button class="tile" data-act="pick-user" data-id="' + esc(u.id) + '"><b>' + esc(u.name) + '</b><span>' + esc(u.role) + (u.pinHash ? "" : " · PIN not set") + "</span></button>"; }).join("") +
+      us.map(function (u) { return '<button class="tile" data-act="pick-user" data-id="' + esc(u.id) + '"><b>' + esc(u.name) + '</b><span>' + esc(u.role === "farm" ? "farm manager" : u.role) + (u.pinHash ? "" : " · PIN not set") + "</span></button>"; }).join("") +
       "</div></div>";
   }
   function pinSheet(title, u, onOk, extra) {
@@ -701,7 +853,7 @@ td.n,th.n{text-align:right}
     }
     pinSheet("Enter your PIN", u, async function (pin, fail) {
       if ((await hash(pin, u.salt)) !== u.pinHash) return fail("Wrong PIN. Try again.");
-      S.who = { id: u.id, name: u.name, role: u.role }; ls(SKEY, S.who); closeSheet(); S.tab = "sell";
+      S.who = { id: u.id, name: u.name, role: u.role }; ls(SKEY, S.who); closeSheet(); S.tab = u.role === "farm" ? "fsale" : "sell";
       audit("Signed in", u.name, "device " + device); renderAll();
     });
   }
@@ -1156,8 +1308,8 @@ td.n,th.n{text-align:right}
       '<label class="check"><input type="checkbox" id="r-sides" ' + (s.sidesWithoutPork ? "checked" : "") + "> Sell sides without pork (off since 19 Oct 2026; stand-alone prices not decided, so this stays off until they are)</label>" +
       '<fieldset class="panel"><legend class="section-label">Waste disposal methods the shop uses</legend>' + ["Pit", "Burn", "Bin collection"].map(function (x) { return '<label class="check"><input type="checkbox" data-disp="' + x + '" ' + (s.disposal.indexOf(x) >= 0 ? "checked" : "") + "> " + x + "</label>"; }).join("") + '<p class="small muted">Feeding to pigs is never an option.</p></fieldset>' +
       '<button class="btn primary">Save rules</button></form>' +
-      '<section class="panel"><h2>Staff and PINs</h2><div class="scroll"><table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>' + us.map(function (u) { return "<tr><td>" + esc(u.name) + "</td><td>" + esc(u.role) + "</td><td>" + (u.pinHash ? '<span class="pill ok">set</span>' : '<span class="pill warn">not set</span>') + '</td><td><button class="btn small" data-act="set-pin" data-id="' + esc(u.id) + '">' + (u.pinHash ? "Reset PIN" : "Set PIN") + '</button> <button class="btn small" data-act="toggle-user" data-id="' + esc(u.id) + '">' + (u.active === false ? "Turn on" : "Turn off") + "</button></td></tr>"; }).join("") + "</tbody></table></div>" +
-      '<form class="row" id="f-adduser"><label style="flex:2 1 160px">New staff name<input id="u-name"></label><label style="flex:1 1 120px">Role<select id="u-role"><option value="cashier">Cashier</option><option value="manager">Manager</option></select></label><button class="btn">Add</button></form>' +
+      '<section class="panel"><h2>Staff and PINs</h2><div class="scroll"><table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>' + us.map(function (u) { return "<tr><td>" + esc(u.name) + "</td><td>" + esc(u.role === "farm" ? "farm manager" : u.role) + "</td><td>" + (u.pinHash ? '<span class="pill ok">set</span>' : '<span class="pill warn">not set</span>') + '</td><td><button class="btn small" data-act="set-pin" data-id="' + esc(u.id) + '">' + (u.pinHash ? "Reset PIN" : "Set PIN") + '</button> <button class="btn small" data-act="toggle-user" data-id="' + esc(u.id) + '">' + (u.active === false ? "Turn on" : "Turn off") + "</button></td></tr>"; }).join("") + "</tbody></table></div>" +
+      '<form class="row" id="f-adduser"><label style="flex:2 1 160px">New staff name<input id="u-name"></label><label style="flex:1 1 120px">Role<select id="u-role"><option value="cashier">Cashier (Pork City)</option><option value="manager">Manager (Pork City)</option><option value="farm">Farm manager (farm book only)</option></select></label><button class="btn">Add</button></form>' +
       '<p class="small muted">PINs say who is at the counter. They are short codes, not bank-grade security; keep the phone itself locked.</p></section>' +
       '<section class="panel"><h2>Pigs available for Meat in</h2><p class="small">' + (pl.length ? esc(pl.filter(function (p) { return p.role !== "Hired boar"; }).map(function (p) { return p.tag; }).join(", ")) : "None loaded yet.") + '</p><p class="small muted">Copied from Bellas Farm Office' + (pigDoc && pigDoc.copiedAt ? " on " + esc(pigDoc.copiedAt) : "") + ". Farm Office stays the record for every pig; the nightly update refreshes this list and marks slaughtered pigs there.</p></section>" +
       '<section class="panel"><h2>This phone</h2><dl class="kv"><dt>Google Sheet</dt><dd>' + (S.conn ? "connected" : "not connected") + '</dd><dt>Last synced</dt><dd>' + esc(S.lastSync ? new Date(S.lastSync).toLocaleString("en-GB", { timeZone: "Africa/Nairobi" }) : "never") + '</dd><dt>Waiting to send</dt><dd>' + S.queue.length + '</dd></dl>' +
@@ -1178,6 +1330,263 @@ td.n,th.n{text-align:right}
     cur.disposal = Array.prototype.filter.call(document.querySelectorAll("[data-disp]"), function (x) { return x.checked; }).map(function (x) { return x.getAttribute("data-disp"); });
     if (!cur.disposal.length) { flash("Choose at least one disposal method.", "warn"); renderView(); return; }
     write("config", "settings", cur); audit("Rules changed", "", JSON.stringify({ rounding: cur.rounding, cash: cur.cashGapLimit, stock: cur.stockGapLimit, disposal: cur.disposal, width: cur.paperWidth })); flash("Rules saved.", "ok"); renderView();
+  }
+
+  // ================================================================== FARM BOOK (farm manager + owner), added 17 Nov 2026
+  // Farm sales, farm expenses, money in/out and the cash check. Saved to the same Google Sheet as the counter
+  // (tabs farmsales, farmexp, farmmoney, farmdays). Nothing here touches Pork City stock or day totals.
+  var KINDS_IN = ["From Christabel", "Other money in"], KINDS_OUT = ["Sent to Christabel", "Other money out"];
+  function farmRecs() {
+    var out = [];
+    ["farmsales", "farmexp", "farmmoney"].forEach(function (c) { all(c).forEach(function (r) { out.push({ col: c, r: r }); }); });
+    return out;
+  }
+  function farmChecks() { return all("farmdays").sort(function (a, b) { return (a.at || "") < (b.at || "") ? -1 : 1; }); }
+  function farmStart() { var l = farmChecks().filter(function (c) { return c.start; }); return l.length ? l[l.length - 1] : null; }
+  function farmExpected() { var st = farmStart(), b = P.farmBalance(st, farmRecs()); b.start = st; return b; }
+  function lastFarmCheck() { var l = farmChecks(); return l.length ? l[l.length - 1] : null; }
+  // every M-Pesa / till code seen anywhere in the business, so one payment is never entered twice
+  function allCodes() {
+    var u = {};
+    all("sales").forEach(function (s) { (s.payments || []).forEach(function (p) { if (p.code) u[P.normCode(p.code)] = "Pork City " + s.receiptNo; }); });
+    all("meatin").forEach(function (m) { if (m.code) u[P.normCode(m.code)] = "Pork City meat in"; });
+    all("days").forEach(function (d) { if (d.handover && d.handover.code) u[P.normCode(d.handover.code)] = "Pork City handover " + d.date; });
+    all("farmsales").forEach(function (s) { if (s.code) u[P.normCode(s.code)] = "farm sale " + s.date; if (s.paid && s.paid.code) u[P.normCode(s.paid.code)] = "farm credit paid " + s.paid.date; });
+    all("farmexp").forEach(function (x) { if (x.code) u[P.normCode(x.code)] = "farm expense " + x.date; });
+    all("farmmoney").forEach(function (m) { if (m.code) u[P.normCode(m.code)] = "farm money " + m.date; });
+    return u;
+  }
+  function opts(list, sel) { return list.map(function (x) { return '<option' + (x === sel ? " selected" : "") + ">" + esc(x) + "</option>"; }).join(""); }
+  function farmSeg() {
+    if (isFarmUser()) return "";
+    return '<div class="seg" role="group" aria-label="Farm book">' + [["fsale", "Sales"], ["fexp", "Expenses"], ["fmoney", "Cash check"]].map(function (t) { return '<button type="button" data-tab="' + t[0] + '" aria-pressed="' + (S.tab === t[0]) + '">' + t[1] + "</button>"; }).join("") + "</div>";
+  }
+  function dateField(id) { var t = now().date; return '<label>Date<input id="' + id + '" type="date" value="' + t + '" max="' + t + '" required></label>'; }
+  function codeField(id, label) { return '<label id="' + id + '-l" hidden>' + (label || "M-Pesa / till code") + '<input id="' + id + '" maxlength="12" autocapitalize="characters" placeholder="e.g. UJFEUAQL0V"></label>'; }
+  function recentRows(col, days) {
+    var from = since(days);
+    return all(col).filter(function (r) { return r.date >= from; }).sort(function (a, b) { return (a.at || "") < (b.at || "") ? 1 : -1; });
+  }
+  function pendingPill(r) { return (r._pending ? ' <span class="pill warn">not sent yet</span>' : "") + (r.void ? ' <span class="pill bad">void: ' + esc(r.void.reason) + "</span>" : ""); }
+  function voidBtn(col, r) { return r.void ? "" : '<button class="btn small" data-act="fvoid" data-col="' + col + '" data-id="' + esc(r.id) + '">Void</button>'; }
+
+  // ------------------------------------------------ farm sale
+  function viewFarmSale() {
+    var list = recentRows("farmsales", 14), owing = P.live(all("farmsales")).filter(function (s) { return s.payment === "Credit (owing)" && !s.paid; });
+    var t = P.farmDayTotals(now().date, all("farmsales"), all("farmexp"), all("farmmoney"));
+    return msgHtml() + farmSeg() + '<div class="grid2"><form class="panel" id="f-fsale"><h2>Record a farm sale</h2>' +
+      '<div class="grid2">' + dateField("fs-date") + '<label>What was sold<select id="fs-item"><option value="">Choose…</option>' + opts(P.FARM_SALE_ITEMS) + "</select></label>" +
+      '<label id="fs-qty-l" hidden>How many pigs<input id="fs-qty" type="number" min="1" step="1" inputmode="numeric"></label>' +
+      '<label id="fs-tags-l" hidden>Ear tags (if tagged)<input id="fs-tags" placeholder="e.g. PPR037, PPR049" autocapitalize="characters"></label>' +
+      '<label id="fs-kg-l" hidden>Live weight, kg (if weighed)<input id="fs-kg" type="number" min="0" step="0.1" inputmode="decimal"></label>' +
+      '<label>Amount the buyer paid (KES)<input id="fs-amt" type="number" min="0" step="1" inputmode="numeric" required></label>' +
+      '<label>Paid how<select id="fs-pay">' + opts(P.FARM_PAY_IN, "Cash") + "</select></label>" + codeField("fs-code") +
+      '<label>Buyer name<input id="fs-cust"></label><label>Buyer phone<input id="fs-phone" inputmode="tel" placeholder="07…"></label></div>' +
+      '<label>Note<input id="fs-note" placeholder="e.g. 2 weaners, 9 weeks old"></label>' +
+      '<label class="check" id="fs-wd-l" hidden><input type="checkbox" id="fs-wd"> The pig is past its medicine withdrawal period (or had no medicine)</label>' +
+      '<div class="note bio">Biosecurity: buyers and their vehicles stay outside the pig pens. Bring the pigs to the loading point.</div>' +
+      '<p class="err" id="fs-err"></p><button class="btn primary">Save sale</button></form>' +
+      '<section class="panel"><h2>Today on the farm</h2><dl class="kv"><dt>Sales</dt><dd>KES ' + K(t.sales) + "</dd><dt>Collected by you</dt><dd>KES " + K(t.toManager) + "</dd><dt>Paid to Christabel / Till</dt><dd>KES " + K(t.toChristabel) + "</dd><dt>Owing</dt><dd>KES " + K(t.credit) + "</dd><dt>Expenses</dt><dd>KES " + K(t.expenses) + "</dd></dl>" +
+      (owing.length ? '<h3>Buyers who still owe</h3><div class="scroll"><table><tbody>' + owing.map(function (s) { return "<tr><td>" + esc(P.prettyDate(s.date)) + "<br><span class=small>" + esc(s.customer) + " · " + esc(s.item) + '</span></td><td class="n">' + K(s.amount) + '</td><td><button class="btn small" data-act="fpaid" data-id="' + esc(s.id) + '">Paid now</button></td></tr>'; }).join("") + "</tbody></table></div>" : "") +
+      "</section></div>" +
+      '<section class="panel"><h3>Farm sales, last 14 days</h3>' + (list.length ? '<div class="scroll"><table><thead><tr><th>Date</th><th>What</th><th class="n">KES</th><th>Paid</th><th></th></tr></thead><tbody>' +
+        list.map(function (s) { return "<tr><td>" + esc(P.prettyDate(s.date)) + "</td><td>" + esc(s.item) + (s.qty ? " × " + s.qty : "") + (s.tags ? '<br><span class="small muted">' + esc(s.tags) + "</span>" : "") + pendingPill(s) + '</td><td class="n">' + K(s.amount) + "</td><td class=small>" + esc(s.payment) + (s.code ? " " + esc(s.code) : "") + (s.paid ? '<br><span class="pill ok">paid ' + esc(s.paid.method) + "</span>" : "") + "</td><td>" + voidBtn("farmsales", s) + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<p class="muted">No farm sales recorded yet.</p>') + "</section>";
+  }
+  function submitFarmSale(e) {
+    e.preventDefault();
+    var n = now(), rec = { date: $("#fs-date").value, item: $("#fs-item").value, qty: $("#fs-qty").value === "" ? null : Math.round(+$("#fs-qty").value),
+      tags: $("#fs-tags").value.trim().toUpperCase(), liveKg: $("#fs-kg").value === "" ? null : +$("#fs-kg").value, amount: Math.round(+$("#fs-amt").value),
+      payment: $("#fs-pay").value, code: P.needsCode($("#fs-pay").value) ? P.normCode($("#fs-code").value) : null, customer: $("#fs-cust").value.trim(),
+      phone: $("#fs-phone").value.trim(), note: $("#fs-note").value.trim(), withdrawalOk: $("#fs-wd").checked, by: S.who.name, byId: S.who.id, at: n.iso, time: n.time, device: device };
+    if (!rec.date || rec.date > n.date) return ($("#fs-err").textContent = "Choose the date of the sale (not a future date).");
+    if (!/Live pig|Weaner|Breeding/.test(rec.item)) { rec.qty = null; rec.tags = ""; rec.liveKg = null; }
+    var chk = P.checkFarmSale(rec, allCodes()); if (!chk.ok) return ($("#fs-err").textContent = chk.errors.join(" "));
+    var id = uid("fs-" + rec.date + "-"); write("farmsales", id, rec);
+    audit("Farm sale", rec.item, "KES " + rec.amount + " " + rec.payment + (rec.code ? " " + rec.code : "") + (rec.tags ? "; " + rec.tags : ""));
+    flash("Farm sale saved: " + rec.item + " KES " + K(rec.amount) + "." + (/Live pig|Weaner|Breeding/.test(rec.item) ? " Christabel updates the pig list in Farm Office." : ""), "ok"); renderAll();
+  }
+  function markPaid(id) {
+    var s = one("farmsales", id); if (!s || s.paid) return;
+    sheet('<form class="panel" id="f-fpaid"><h3>' + esc(s.customer) + " paid KES " + K(s.amount) + '</h3><div class="grid2">' + dateField("fp-date") +
+      '<label>Paid how<select id="fp-pay">' + opts(["Cash", "M-Pesa (manager)", "Paid to Christabel", "Till 3014485"], "Cash") + "</select></label>" + codeField("fp-code") + '</div><p class="err" id="fp-err"></p><div class="row"><button class="btn primary">Save</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
+    farmToggles();
+    $("#f-fpaid").addEventListener("submit", function (e) {
+      e.preventDefault(); var m = $("#fp-pay").value, c = P.normCode($("#fp-code").value), n = now(), d = $("#fp-date").value;
+      if (!d || d > n.date) return ($("#fp-err").textContent = "Choose the date it was paid.");
+      if (P.needsCode(m)) { if (!P.validCode(c)) return ($("#fp-err").textContent = "Enter the 10-character code."); if (allCodes()[c]) return ($("#fp-err").textContent = "Code " + c + " has already been used."); }
+      write("farmsales", id, Object.assign({}, s, { paid: { method: m, amount: s.amount, code: P.needsCode(m) ? c : null, date: d, at: n.iso, by: S.who.name } }));
+      audit("Farm credit paid", s.customer, "KES " + s.amount + " " + m + (P.needsCode(m) ? " " + c : "")); closeSheet(); flash("Saved: " + s.customer + " has paid.", "ok"); renderAll();
+    });
+  }
+
+  // ------------------------------------------------ farm expense
+  function viewFarmExp() {
+    var list = recentRows("farmexp", 14);
+    return msgHtml() + farmSeg() + '<div class="grid2"><form class="panel" id="f-fexp"><h2>Record a farm expense</h2><div class="grid2">' + dateField("fx-date") +
+      '<label>What for<select id="fx-cat"><option value="">Choose…</option>' + opts(P.FARM_EXP_CATS) + "</select></label>" +
+      '<label>Amount (KES)<input id="fx-amt" type="number" min="0" step="1" inputmode="numeric" required></label>' +
+      '<label>Paid how<select id="fx-pay">' + opts(P.FARM_PAY_OUT, "Cash") + "</select></label>" + codeField("fx-code", "M-Pesa code") +
+      '<label>Paid to<input id="fx-to" placeholder="e.g. Unga Farmcare, Tunyai"></label></div>' +
+      '<label>What was bought or paid for<input id="fx-desc" placeholder="e.g. 2 bags sow & weaner meal" required></label>' +
+      '<label class="check" id="fx-pig-l" hidden><input type="checkbox" id="fx-pigfarm"> Bought from another pig farm</label>' +
+      '<div class="note bio" id="fx-bio" hidden><b>ASF rule for items from another pig farm:</b> disinfect the bags, or empty them into our own containers, before they go into the feed store. Burn the empty bags. Never return them.</div>' +
+      '<p class="small muted">Keep the receipt or the M-Pesa message. Costs paid from the Pork City till are recorded at the counter (Expenses), not here.</p>' +
+      '<p class="err" id="fx-err"></p><button class="btn primary">Save expense</button></form>' +
+      '<section class="panel"><h3>Farm expenses, last 14 days</h3>' + (list.length ? '<div class="scroll"><table><thead><tr><th>Date</th><th>What</th><th class="n">KES</th><th>Paid</th><th></th></tr></thead><tbody>' +
+        list.map(function (x) { return "<tr><td>" + esc(P.prettyDate(x.date)) + "</td><td>" + esc(x.category) + '<br><span class="small muted">' + esc(x.description) + "</span>" + pendingPill(x) + '</td><td class="n">' + K(x.amount) + "</td><td class=small>" + esc(x.payment) + (x.code ? " " + esc(x.code) : "") + "</td><td>" + voidBtn("farmexp", x) + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<p class="muted">No farm expenses recorded yet.</p>') + "</section></div>";
+  }
+  function submitFarmExp(e) {
+    e.preventDefault();
+    var n = now(), rec = { date: $("#fx-date").value, category: $("#fx-cat").value, amount: Math.round(+$("#fx-amt").value), payment: $("#fx-pay").value,
+      code: $("#fx-pay").value === "M-Pesa (manager)" ? P.normCode($("#fx-code").value) : null, paidTo: $("#fx-to").value.trim(), description: $("#fx-desc").value.trim(),
+      fromPigFarm: !$("#fx-pig-l").hidden && $("#fx-pigfarm").checked, by: S.who.name, byId: S.who.id, at: n.iso, time: n.time, device: device };
+    if (!rec.date || rec.date > n.date) return ($("#fx-err").textContent = "Choose the date it was paid (not a future date).");
+    var chk = P.checkFarmExpense(rec, allCodes()); if (!chk.ok) return ($("#fx-err").textContent = chk.errors.join(" "));
+    write("farmexp", uid("fx-" + rec.date + "-"), rec);
+    audit("Farm expense", rec.category, "KES " + rec.amount + " " + rec.payment + (rec.code ? " " + rec.code : "") + "; " + rec.description);
+    flash("Saved " + rec.category + " KES " + K(rec.amount) + "." + (rec.fromPigFarm ? " Remember: disinfect or empty the bags, burn them, never return them." : ""), rec.fromPigFarm ? "warn" : "ok"); renderAll();
+  }
+
+  // ------------------------------------------------ money in/out and the cash check
+  function viewFarmMoney() {
+    var b = farmExpected(), last = lastFarmCheck(), lim = settings().cashGapLimit;
+    var moves = recentRows("farmmoney", 31), checks = farmChecks().slice(-10).reverse();
+    var t = P.farmDayTotals(now().date, all("farmsales"), all("farmexp"), all("farmmoney"));
+    return msgHtml() + farmSeg() + '<div class="grid2"><section class="panel"><h2>Money with the farm manager</h2>' +
+      (b.start ? '<dl class="kv"><dt>Cash that should be in hand</dt><dd>KES ' + K(b.cash) + "</dd>" + (b.mpesaKnown ? "<dt>Farm M-Pesa that should be there</dt><dd>KES " + K(b.mpesa) + "</dd>" : "") +
+        "<dt>Last count</dt><dd>" + (last ? esc(P.prettyDate(last.date)) + " " + esc(last.time) + " · " + (last.cashGap ? (last.cashGap < 0 ? "short " : "over ") + K(Math.abs(last.cashGap)) : "no gap") : "–") + "</dd></dl>" +
+        '<p class="small muted">Worked out from the last starting count (' + esc(P.prettyDate(b.start.date)) + "): plus sales paid to you and money from Christabel, minus expenses you paid and money you sent. A forgotten receipt, once recorded, closes the gap.</p>"
+        : '<div class="banner warn">No starting count yet. Count the farm cash now and enter it below: it becomes the starting point.</div>') +
+      '<dl class="kv"><dt>Today: sales collected by you</dt><dd>KES ' + K(t.toManager) + "</dd><dt>Today: expenses you paid</dt><dd>KES " + K(t.expByManager) + "</dd><dt>Today: sent to Christabel</dt><dd>KES " + K(t.sentToChristabel) + "</dd></dl></section>" +
+      '<form class="panel" id="f-fcount"><h2>Count the cash</h2><p class="small muted">Do this every evening, and before sending money to Christabel.</p><div class="grid2">' +
+      '<label>Cash counted in hand (KES)<input id="fc-cash" type="number" min="0" step="1" inputmode="numeric" required></label>' +
+      '<label>Farm M-Pesa balance (optional)<input id="fc-mpesa" type="number" min="0" step="1" inputmode="numeric" placeholder="Only if the line is used for the farm only"></label></div>' +
+      '<div id="fc-prev" class="kv"></div><label id="fc-why-l" hidden>The cash is more than KES ' + lim + ' different from what it should be. Say why.<input id="fc-why" placeholder="e.g. paid KES 300 transport, receipt not yet entered"></label>' +
+      (role("owner") && b.start ? '<label class="check"><input type="checkbox" id="fc-restart"> Owner: start again from this count (after the gap is settled)</label>' : "") +
+      '<p class="err" id="fc-err"></p><button class="btn primary">Save count</button></form></div>' +
+      '<form class="panel" id="f-fmove"><h2>Money in or out</h2><div class="grid2">' + dateField("fm-date") +
+      '<label>What happened<select id="fm-kind"><optgroup label="Money in">' + opts(KINDS_IN) + '</optgroup><optgroup label="Money out">' + opts(KINDS_OUT, "Sent to Christabel") + "</optgroup></select></label>" +
+      '<label>Amount (KES)<input id="fm-amt" type="number" min="0" step="1" inputmode="numeric" required></label>' +
+      '<label>Cash or M-Pesa<select id="fm-method">' + opts(["M-Pesa (manager)", "Cash"], "M-Pesa (manager)") + "</select></label>" + codeField("fm-code", "M-Pesa code") +
+      '<label>Note<input id="fm-note" placeholder="e.g. float for feed, or cash handed to Christabel in person"></label></div>' +
+      '<p class="err" id="fm-err"></p><button class="btn primary">Save</button></form>' +
+      '<div class="grid2"><section class="panel"><h3>Money in and out, last 31 days</h3>' + (moves.length ? '<div class="scroll"><table><tbody>' + moves.map(function (m) { return "<tr><td>" + esc(P.prettyDate(m.date)) + "</td><td>" + esc(m.kind) + '<br><span class="small muted">' + esc(m.method + (m.code ? " " + m.code : "") + (m.note ? " · " + m.note : "")) + "</span>" + pendingPill(m) + '</td><td class="n">' + (P.FARM_MOVES[m.kind] < 0 ? "−" : "+") + K(m.amount) + "</td><td>" + voidBtn("farmmoney", m) + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<p class="muted">Nothing yet.</p>') + "</section>" +
+      '<section class="panel"><h3>Recent counts</h3>' + (checks.length ? '<div class="scroll"><table><thead><tr><th>When</th><th class="n">Counted</th><th class="n">Should be</th><th class="n">Gap</th><th></th></tr></thead><tbody>' + checks.map(function (c) { return "<tr><td>" + esc(P.prettyDate(c.date) + " " + c.time) + (c.start ? ' <span class="pill">start</span>' : "") + (c.reason ? '<br><span class="small muted">' + esc(c.reason) + "</span>" : "") + '</td><td class="n">' + K(c.cashCounted) + '</td><td class="n">' + K(c.expectedCash) + '</td><td class="n"><span class="pill ' + (!c.cashGap ? "ok" : Math.abs(c.cashGap) > lim ? "bad" : "warn") + '">' + (c.cashGap ? (c.cashGap < 0 ? "short " : "over ") + K(Math.abs(c.cashGap)) : "0") + '</span></td><td><button class="btn small" data-act="freport" data-id="' + esc(c.id) + '">Report</button></td></tr>'; }).join("") + "</tbody></table></div>" : '<p class="muted">No counts yet.</p>') + "</section></div>";
+  }
+  function countPreview() {
+    var el = $("#fc-cash"); if (!el) return;
+    var b = farmExpected(), prev = $("#fc-prev"), last = lastFarmCheck(), lim = settings().cashGapLimit;
+    if (!b.start || el.value === "" || ($("#fc-restart") && $("#fc-restart").checked)) { prev.innerHTML = ""; $("#fc-why-l").hidden = true; return; }
+    var r = P.farmCheckResult(b, el.value, $("#fc-mpesa").value === "" ? null : $("#fc-mpesa").value);
+    var prevGap = last && !last.start ? last.cashGap || 0 : 0;
+    prev.innerHTML = "<dt>Should be in hand</dt><dd>KES " + K(b.cash) + "</dd><dt>Gap</dt><dd>" + (r.cashGap ? (r.cashGap < 0 ? "short " : "over ") + K(Math.abs(r.cashGap)) : "0") + "</dd>" + (r.mpesaGap != null && b.mpesaKnown ? "<dt>M-Pesa gap</dt><dd>" + K(r.mpesaGap) + "</dd>" : "");
+    $("#fc-why-l").hidden = !(Math.abs(r.cashGap - prevGap) > lim);
+  }
+  function submitFarmCount(e) {
+    e.preventDefault();
+    var n = now(), b = farmExpected(), last = lastFarmCheck(), lim = settings().cashGapLimit, cash = $("#fc-cash").value, mp = $("#fc-mpesa").value;
+    if (cash === "" || !(+cash >= 0)) return ($("#fc-err").textContent = "Count the cash and enter the amount (0 if none).");
+    var restart = !b.start || !!($("#fc-restart") && $("#fc-restart").checked);
+    var rec = { date: n.date, time: n.time, at: n.iso, cashCounted: Math.round(+cash), mpesaCounted: mp === "" ? null : Math.round(+mp), by: S.who.name, byId: S.who.id, device: device };
+    if (restart) Object.assign(rec, { start: true, expectedCash: b.start ? b.cash : rec.cashCounted, cashGap: b.start ? rec.cashCounted - b.cash : 0, expectedMpesa: null, mpesaGap: null, reason: b.start ? "Owner restarted the count" : "Starting count" });
+    else {
+      var r = P.farmCheckResult(b, rec.cashCounted, rec.mpesaCounted), prevGap = last && !last.start ? last.cashGap || 0 : 0, why = $("#fc-why").value.trim();
+      if (Math.abs(r.cashGap - prevGap) > lim && !why) { countPreview(); return ($("#fc-err").textContent = "Say why the cash is different, then save."); }
+      Object.assign(rec, { expectedCash: b.cash, cashGap: r.cashGap, expectedMpesa: b.mpesaKnown ? b.mpesa : null, mpesaGap: b.mpesaKnown ? r.mpesaGap : null, reason: why });
+    }
+    var t = P.farmDayTotals(n.date, all("farmsales"), all("farmexp"), all("farmmoney"));
+    rec.report = P.farmReportText(n.date, t, rec, null, S.who.name);
+    var id = uid("fc-" + n.date + "-"); write("farmdays", id, rec);
+    audit("Farm cash count", n.date, "counted " + rec.cashCounted + "; should be " + rec.expectedCash + "; gap " + rec.cashGap + (rec.start ? "; start" : "") + (rec.reason ? "; " + rec.reason : ""));
+    showFarmReport(Object.assign({ id: id }, rec)); renderAll();
+  }
+  function showFarmReport(c) {
+    S.reportText = c.report;
+    sheet('<div class="panel"><h3>Farm report · ' + esc(P.prettyDate(c.date)) + "</h3>" + (c.cashGap && !c.start ? '<div class="banner warn">Cash ' + (c.cashGap < 0 ? "short" : "over") + " by KES " + K(Math.abs(c.cashGap)) + ".</div>" : "") +
+      '<div class="receipt">' + esc(c.report) + '</div><div class="row"><button class="btn" data-act="copy-report">Copy</button><a class="btn dark" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(c.report) + '">Share to WhatsApp</a></div><p class="small muted">The report is also saved in the Google Sheet, so Christabel sees it without the message.</p><button class="btn primary" data-act="close-sheet">Done</button></div>');
+  }
+  function submitFarmMove(e) {
+    e.preventDefault();
+    var n = now(), rec = { date: $("#fm-date").value, kind: $("#fm-kind").value, amount: Math.round(+$("#fm-amt").value), method: $("#fm-method").value,
+      code: $("#fm-method").value === "M-Pesa (manager)" ? P.normCode($("#fm-code").value) : null, note: $("#fm-note").value.trim(), by: S.who.name, byId: S.who.id, at: n.iso, time: n.time, device: device };
+    if (!rec.date || rec.date > n.date) return ($("#fm-err").textContent = "Choose the date (not a future date).");
+    var chk = P.checkFarmMove(rec, allCodes()); if (!chk.ok) return ($("#fm-err").textContent = chk.errors.join(" "));
+    write("farmmoney", uid("fm-" + rec.date + "-"), rec);
+    audit("Farm money", rec.kind, "KES " + rec.amount + " " + rec.method + (rec.code ? " " + rec.code : "") + (rec.note ? "; " + rec.note : ""));
+    flash("Saved: " + rec.kind + " KES " + K(rec.amount) + ".", "ok"); renderAll();
+  }
+  function farmVoid(col, id) {
+    var r = one(col, id); if (!r || r.void) return;
+    var label = col === "farmsales" ? r.item : col === "farmexp" ? r.category : r.kind;
+    sheet('<form class="panel" id="f-fvoid"><h3>Void ' + esc(label) + " KES " + K(r.amount) + '</h3><p class="small muted">The record stays in the Sheet, marked void. Christabel sees who voided it and why.</p><label>Reason<input id="fv-why" required></label><p class="err" id="fv-err"></p><div class="row"><button class="btn primary">Void</button><button type="button" class="btn" data-act="close-sheet">Cancel</button></div></form>');
+    $("#f-fvoid").addEventListener("submit", function (e) {
+      e.preventDefault(); var why = $("#fv-why").value.trim(); if (!why) return ($("#fv-err").textContent = "Say why.");
+      write(col, id, Object.assign({}, r, { void: { by: S.who.name, reason: why, at: now().iso } }));
+      audit("Farm record voided", label, "KES " + r.amount + "; " + why); closeSheet(); renderAll();
+    });
+  }
+  function farmToggles() {
+    var it = $("#fs-item"), pigsSold = it && /Live pig|Weaner|Breeding/.test(it.value);
+    if (it) { $("#fs-qty-l").hidden = !pigsSold; $("#fs-tags-l").hidden = !pigsSold; $("#fs-kg-l").hidden = !pigsSold; $("#fs-wd-l").hidden = it.value !== "Live pig (for meat)"; }
+    if ($("#fs-pay")) $("#fs-code-l").hidden = !P.needsCode($("#fs-pay").value);
+    if ($("#fp-pay")) $("#fp-code-l").hidden = !P.needsCode($("#fp-pay").value);
+    if ($("#fx-pay")) $("#fx-code-l").hidden = $("#fx-pay").value !== "M-Pesa (manager)";
+    if ($("#fx-cat")) { var feed = /feed|Feed/.test($("#fx-cat").value); $("#fx-pig-l").hidden = !feed; $("#fx-bio").hidden = !(feed && $("#fx-pigfarm").checked); }
+    if ($("#fm-method")) $("#fm-code-l").hidden = $("#fm-method").value !== "M-Pesa (manager)";
+  }
+
+  // ------------------------------------------------ Money: the whole business in one place (owner)
+  function ticked(code) { return one("recon", "tick-" + code); }
+  function viewMoney() {
+    var b = farmExpected(), last = lastFarmCheck(), today = now().date, from = since(13), lim = settings().cashGapLimit;
+    var dates = {};
+    all("days").concat(all("farmsales"), all("farmexp"), all("farmmoney")).forEach(function (r) { if (r.date && r.date >= from && r.date <= today) dates[r.date] = 1; });
+    var rows = Object.keys(dates).sort().reverse().map(function (d) {
+      var pd = one("days", d), pt = pd ? (pd.status === "closed" && pd.totals ? pd.totals : totalsFor(pd)) : null;
+      var ft = P.farmDayTotals(d, all("farmsales"), all("farmexp"), all("farmmoney"));
+      var pcIn = pt ? pt.porkKes + pt.foodKes : 0, pcOut = pt ? pt.expensesKes : 0;
+      var sent = ft.sentToChristabel + (pd && pd.handover && /Christabel/.test(pd.handover.method || "") ? Math.round(+pd.handover.amount || 0) : 0);
+      var fc = farmChecks().filter(function (c) { return c.date === d; }).pop();
+      return "<tr><td>" + esc(P.prettyDate(d)) + (pd && pd.status !== "closed" ? ' <span class="pill warn">open</span>' : "") + '</td><td class="n">' + K(pcIn) + '</td><td class="n">' + K(pcOut) + '</td><td class="n">' + K(ft.sales) + '</td><td class="n">' + K(ft.expenses) + '</td><td class="n"><b>' + K(pcIn - pcOut + ft.net) + '</b></td><td class="n">' + K(sent) +
+        '</td><td class="n">' + (pt && pt.cashGap != null ? gapPill(pt.cashGap, lim) : "–") + '</td><td class="n">' + (fc && !fc.start ? gapPill(fc.cashGap, lim) : "–") + "</td></tr>";
+    }).join("");
+    // codes to tick against the M-Pesa / Kopo Kopo statements
+    var codes = [];
+    all("farmsales").forEach(function (s) { if (s.void) return; if (s.code) codes.push({ code: s.code, what: "Farm sale · " + s.item + " · " + s.payment, amt: s.amount, date: s.date, dir: "in" }); if (s.paid && s.paid.code) codes.push({ code: s.paid.code, what: "Farm credit paid · " + s.customer + " · " + s.paid.method, amt: s.paid.amount, date: s.paid.date, dir: "in" }); });
+    all("farmexp").forEach(function (x) { if (!x.void && x.code) codes.push({ code: x.code, what: "Farm expense · " + x.category + " · " + (x.paidTo || x.description), amt: x.amount, date: x.date, dir: "out" }); });
+    all("farmmoney").forEach(function (m) { if (!m.void && m.code) codes.push({ code: m.code, what: "Farm · " + m.kind, amt: m.amount, date: m.date, dir: P.FARM_MOVES[m.kind] > 0 ? "out from you" : "in to you" }); });
+    all("days").forEach(function (d) { if (d.handover && d.handover.code && d.handover.amount) codes.push({ code: d.handover.code, what: "Pork City handover", amt: d.handover.amount, date: d.date, dir: "in to you" }); });
+    codes = codes.filter(function (c) { return c.date >= since(31); }).sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+    var open = codes.filter(function (c) { return !ticked(c.code); });
+    // this month: float received vs spent
+    var m0 = today.slice(0, 8) + "01", mf = function (col, f) { return P.live(all(col)).filter(function (r) { return r.date >= m0 && f(r); }).reduce(function (a, r) { return a + Math.round(+r.amount || 0); }, 0); };
+    var floatIn = mf("farmmoney", function (r) { return r.kind === "From Christabel"; }), sentOut = mf("farmmoney", function (r) { return r.kind === "Sent to Christabel"; });
+    var collected = mf("farmsales", function (r) { return !!P.farmPot(r.payment); }), spentByMgr = mf("farmexp", function (r) { return !!P.farmPot(r.payment); });
+    var owing = P.live(all("farmsales")).filter(function (s) { return s.payment === "Credit (owing)" && !s.paid; });
+    return msgHtml() + '<div class="grid2"><section class="panel"><h2>Money with the farm manager</h2>' +
+      (b.start ? '<dl class="kv"><dt>Cash that should be in hand</dt><dd>KES ' + K(b.cash) + "</dd>" + (b.mpesaKnown ? "<dt>Farm M-Pesa</dt><dd>KES " + K(b.mpesa) + "</dd>" : "") + "<dt>Last count</dt><dd>" + (last ? esc(P.prettyDate(last.date) + " " + last.time) + " · " + gapPill(last.start ? 0 : last.cashGap, lim) : "–") + "</dd></dl>" + (last && last.date < P.addDays(today, -1) ? '<div class="banner warn">No cash count since ' + esc(P.prettyDate(last.date)) + ".</div>" : "") : '<div class="banner warn">The farm manager has not done the first cash count yet.</div>') +
+      '<h3>This month (from ' + esc(P.prettyDate(m0)) + ')</h3><dl class="kv"><dt>Float from you</dt><dd>KES ' + K(floatIn) + "</dd><dt>Sales collected by the manager</dt><dd>KES " + K(collected) + "</dd><dt>Expenses paid by the manager</dt><dd>KES " + K(spentByMgr) + "</dd><dt>Sent to you</dt><dd>KES " + K(sentOut) + "</dd></dl>" +
+      (owing.length ? '<p class="small"><b>Buyers owing:</b> ' + owing.map(function (s) { return esc(s.customer + " KES " + K(s.amount) + " (" + P.prettyDate(s.date) + ")"); }).join("; ") + "</p>" : "") + "</section>" +
+      '<section class="panel"><h2>Tick against your statements</h2><p class="small muted">Every M-Pesa and till code from the farm and the Pork City handovers, last 31 days. Tick each one when you see it on your M-Pesa or Kopo Kopo statement.</p>' +
+      '<p><span class="pill ' + (open.length ? "warn" : "ok") + '">' + open.length + " not ticked</span> <span class=\"pill ok\">" + (codes.length - open.length) + " ticked</span></p>" +
+      (codes.length ? '<div class="scroll"><table><tbody>' + codes.slice(0, 60).map(function (c) { var tk = ticked(c.code); return '<tr><td><label class="check"><input type="checkbox" data-tick="' + esc(c.code) + '" ' + (tk ? "checked" : "") + '> <span class="small">' + esc(c.code) + "<br>" + esc(P.prettyDate(c.date) + " · " + c.what) + '</span></label></td><td class="n">' + K(c.amt) + "</td></tr>"; }).join("") + "</tbody></table></div>" : '<p class="muted">No codes yet.</p>') + "</section></div>" +
+      '<section class="panel"><div class="row" style="justify-content:space-between"><h2>Whole business, last 14 days</h2><button class="btn small" data-act="csv-farm">Export farm records (CSV)</button></div><div class="scroll"><table><thead><tr><th>Date</th><th class="n">Pork City takings</th><th class="n">Pork City expenses</th><th class="n">Farm sales</th><th class="n">Farm expenses</th><th class="n">Net</th><th class="n">Sent to you</th><th class="n">Pork City gap</th><th class="n">Farm cash gap</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="9" class="muted">Nothing recorded in the last 14 days.</td></tr>') + '</tbody></table></div><p class="small muted">Pork City expenses include farm costs paid from the till (salary farm hand, pig feed). Farm expenses are what the farm manager or you paid. Gaps are cash counted minus what should be there.</p></section>';
+  }
+  function gapPill(g, lim) { g = Math.round(+g || 0); return '<span class="pill ' + (!g ? "ok" : Math.abs(g) > lim ? "bad" : "warn") + '">' + (!g ? "0" : (g < 0 ? "short " : "over ") + K(Math.abs(g))) + "</span>"; }
+  function tick(code, on) {
+    var n = now(), cur = ticked(code);
+    write("recon", "tick-" + code, { kind: "tick", code: code, on: on, by: S.who.name, at: n.iso, date: n.date, history: ((cur && cur.history) || []).concat([{ on: on, by: S.who.name, at: n.iso }]) });
+    audit(on ? "Code ticked on statement" : "Code un-ticked", code);
+  }
+  function csvFarm() {
+    var rows = [["type", "date", "time", "what", "detail", "amount_kes", "payment", "code", "buyer_or_paid_to", "void", "by"]];
+    all("farmsales").forEach(function (s) { rows.push(["sale", s.date, s.time, s.item, [s.qty ? s.qty + " pigs" : "", s.tags, s.liveKg ? s.liveKg + " kg" : "", s.note, s.paid ? "paid " + s.paid.date + " " + s.paid.method + " " + (s.paid.code || "") : ""].filter(Boolean).join("; "), s.amount, s.payment, s.code || "", s.customer, s.void ? s.void.reason : "", s.by]); });
+    all("farmexp").forEach(function (x) { rows.push(["expense", x.date, x.time, x.category, x.description, x.amount, x.payment, x.code || "", x.paidTo, x.void ? x.void.reason : "", x.by]); });
+    all("farmmoney").forEach(function (m) { rows.push(["money", m.date, m.time, m.kind, m.note, m.amount, m.method, m.code || "", "", m.void ? m.void.reason : "", m.by]); });
+    farmChecks().forEach(function (c) { rows.push(["cash count", c.date, c.time, c.start ? "start" : "count", "should be " + c.expectedCash + "; gap " + c.cashGap + (c.reason ? "; " + c.reason : ""), c.cashCounted, "", "", "", "", c.by]); });
+    rows = [rows[0]].concat(rows.slice(1).sort(function (a, b) { return a[1] + a[2] < b[1] + b[2] ? -1 : 1; }));
+    saveFile("bellas-farm-book.csv", P.csv(rows));
   }
 
   // ------------------------------------------------------------------ files
@@ -1241,6 +1650,10 @@ td.n,th.n{text-align:right}
       case "recon": reconSheet(id); break;
       case "csv-days": csvDays(); break;
       case "csv-sales": csvSales(); break;
+      case "csv-farm": csvFarm(); break;
+      case "fpaid": markPaid(id); break;
+      case "fvoid": farmVoid(a.getAttribute("data-col"), id); break;
+      case "freport": var fc = one("farmdays", id); if (fc && fc.report) showFarmReport(fc); break;
       case "set-pin": setPinFlow(one("users", id), false); break;
       case "toggle-user": var u = one("users", id); write("users", id, Object.assign({}, u, { active: u.active === false })); audit(u.active === false ? "Staff turned on" : "Staff turned off", u.name); renderView(); break;
     }
@@ -1251,13 +1664,17 @@ td.n,th.n{text-align:right}
       write("days", day.date, Object.assign({}, day, { offer: on, offerBy: S.who.name, offerAt: now().iso })); audit("Pork ugali offer " + (on ? "on" : "off"), day.date); renderAll();
     }
     if (e.target.id === "x-cat" || e.target.id === "x-pigfarm") expCatChange();
+    if (/^(fs-item|fs-pay|fp-pay|fx-pay|fx-cat|fx-pigfarm|fm-method)$/.test(e.target.id)) farmToggles();
+    if (e.target.id === "fc-restart") countPreview();
+    if (e.target.hasAttribute && e.target.hasAttribute("data-tick") && role("owner")) tick(e.target.getAttribute("data-tick"), e.target.checked);
     if (e.target.id === "m-sup") $("#m-sup-new-l").hidden = e.target.value !== "__new";
     if (e.target.id === "m-live" || e.target.id === "m-carc") { var dr = P.dressing(+$("#m-live").value, +$("#m-carc").value); $("#m-dress").textContent = dr ? "Dressing " + dr + "% (carcass ÷ live)." : ""; }
   });
-  document.addEventListener("input", function (e) { if (e.target.id === "find") $("#found").innerHTML = findReceipts(e.target.value); if (e.target.id === "o-kg") { var prev = lastClosed(); $("#o-why-l").hidden = !(prev && Math.abs(+e.target.value - prev.closingKg) > settings().openingDiffLimit); } });
+  document.addEventListener("input", function (e) { if (e.target.id === "find") $("#found").innerHTML = findReceipts(e.target.value); if (e.target.id === "fc-cash" || e.target.id === "fc-mpesa") countPreview(); if (e.target.id === "o-kg") { var prev = lastClosed(); $("#o-why-l").hidden = !(prev && Math.abs(+e.target.value - prev.closingKg) > settings().openingDiffLimit); } });
   document.addEventListener("submit", function (e) {
     var id = e.target.id;
     if (id === "f-open") submitOpen(e); else if (id === "f-meat") submitMeat(e); else if (id === "f-waste") submitWaste(e);
+    else if (id === "f-fsale") submitFarmSale(e); else if (id === "f-fexp") submitFarmExp(e); else if (id === "f-fmove") submitFarmMove(e); else if (id === "f-fcount") submitFarmCount(e);
     else if (id === "f-exp") submitExp(e); else if (id === "f-close") submitClose(e); else if (id === "f-prices") savePrices(e); else if (id === "f-rules") saveRules(e);
     else if (id === "f-adduser") { e.preventDefault(); var n = $("#u-name").value.trim(); if (!n) return; var uidv = "u-" + n.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 20) + "-" + uid().slice(-4); write("users", uidv, { name: n, role: $("#u-role").value, order: 5, active: true }); audit("Staff added", n, $("#u-role").value); renderView(); }
   });
@@ -1279,6 +1696,7 @@ td.n,th.n{text-align:right}
     if ($("#r-round")) $("#r-round").value = s.rounding;
     if ($("#r-width")) $("#r-width").value = String(s.paperWidth || 32);
     if ($("#x-cat")) expCatChange();
+    farmToggles();
     if (day && day._draft && $("#h-how")) $("#h-how").value = day._draft.handover.method;
   };
   // openDay() returns a fresh object each call, so close-day drafts live in `drafts`
